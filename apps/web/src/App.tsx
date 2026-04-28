@@ -1222,10 +1222,7 @@ function HomePage() {
                     const angle = index * workflowStepAngle;
                     const currentAngle = normalizeWorkflowAngle(angle + workflowRotation);
                     const frontness = Math.pow((Math.cos((Math.abs(currentAngle) * Math.PI) / 180) + 1) / 2, 1.6);
-                    const cardWidth = 360 + frontness * 140;
                     const cardOpacity = 0.12 + frontness * 0.88;
-                    const cardScale = 0.84 + frontness * 0.18;
-                    const cardDepth = 520 + frontness * 34;
                     const cardZIndex = 100 + Math.round(frontness * 100);
 
                     return (
@@ -1236,10 +1233,7 @@ function HomePage() {
                           {
                             "--angle": `${angle}deg`,
                             "--counter-angle": `${-(workflowRotation + angle)}deg`,
-                            "--card-width": `${cardWidth}px`,
                             "--card-opacity": `${cardOpacity}`,
-                            "--card-scale": `${cardScale}`,
-                            "--card-depth": `${cardDepth}px`,
                             zIndex: cardZIndex,
                           } as React.CSSProperties
                         }
