@@ -38,6 +38,9 @@ const dashboardChartWidth = 600;
 const dashboardChartHeight = 240;
 const dashboardChartPaddingTop = 34;
 const dashboardChartPaddingBottom = 24;
+const dashboardTrafficColors = ["#f2d99a", "#d9ab51", "#8b5b21", "#473116"];
+const dashboardDonutRadius = 74;
+const dashboardDonutCircumference = 2 * Math.PI * dashboardDonutRadius;
 
 type DashboardChartPoint = {
   label: string;
@@ -45,6 +48,14 @@ type DashboardChartPoint = {
   display_value: string;
   x: number;
   y: number;
+};
+
+type DashboardDonutSegment = {
+  label: string;
+  value: string;
+  color: string;
+  dashLength: number;
+  dashOffset: number;
 };
 
 function resolveStepId(value?: string) {
@@ -127,6 +138,25 @@ function getDashboardTrendPoints(overview: DashboardOverview): DashboardChartPoi
     x: index * step,
     y: dashboardChartPaddingTop + (1 - point.value / maxValue) * drawableHeight,
   }));
+}
+
+function getDashboardDonutSegments(overview: DashboardOverview): DashboardDonutSegment[] {
+  const rawValues = overview.traffic_sources.map((item) => Math.max(0, parseDashboardValue(item.value)));
+  const total = rawValues.reduce((sum, value) => sum + value, 0) || 1;
+  let usedLength = 0;
+
+  return overview.traffic_sources.map((item, index) => {
+    const dashLength = (rawValues[index] / total) * dashboardDonutCircumference;
+    const segment = {
+      label: item.label,
+      value: item.value,
+      color: dashboardTrafficColors[index % dashboardTrafficColors.length],
+      dashLength,
+      dashOffset: -usedLength,
+    };
+    usedLength += dashLength;
+    return segment;
+  });
 }
 
 const workflowShowcase = [
@@ -610,6 +640,7 @@ function HomePage() {
     {}
   );
   const [activeTrendIndex, setActiveTrendIndex] = useState<number | null>(null);
+  const [activeTrafficIndex, setActiveTrafficIndex] = useState<number | null>(null);
   const [isRankVisible, setIsRankVisible] = useState(false);
   const [isDistributionVisible, setIsDistributionVisible] = useState(false);
   const [workflowRotation, setWorkflowRotation] = useState(-12);
@@ -630,7 +661,17 @@ function HomePage() {
   });
 
   const dashboardOverview = remoteDashboardOverview[dashboardRange] ?? localDashboardOverviewMap[dashboardRange];
+  const dashboardTotalPlayRows = dashboardRangeOptions.map((option) => {
+    const overview = remoteDashboardOverview[option.value] ?? localDashboardOverviewMap[option.value];
+    const playsMetric = overview.metrics.find((metric) => metric.label.includes("播放")) ?? overview.metrics[0];
+    return {
+      label: option.label,
+      value: playsMetric?.value ?? "-",
+      growth: playsMetric?.growth ?? "",
+    };
+  });
   const dashboardTrendPoints = useMemo(() => getDashboardTrendPoints(dashboardOverview), [dashboardOverview]);
+  const dashboardDonutSegments = useMemo(() => getDashboardDonutSegments(dashboardOverview), [dashboardOverview]);
   const activeTrendPoint =
     activeTrendIndex !== null && dashboardTrendPoints[activeTrendIndex] ? dashboardTrendPoints[activeTrendIndex] : null;
 
@@ -812,13 +853,6 @@ function HomePage() {
 
   function resolveProjectCoverUrl(project: ProjectSummary) {
     return project.cover_image_url?.trim() || fallbackProtagonistCoverUrl;
-  }
-
-  function resolveProjectBadge(project: ProjectSummary) {
-    if (project.progress >= 80) {
-      return "已发布";
-    }
-    return "创作中";
   }
 
   async function refreshProjects() {
@@ -1227,12 +1261,28 @@ function HomePage() {
 
             <div className="project-preview-grid">
               {projects.map((item, index) => {
-                const badge = resolveProjectBadge(item);
                 const coverClass = resolveProjectCoverClass(item, index);
                 const coverUrl = resolveProjectCoverUrl(item);
                 return (
-                  <article className="project-preview-card" key={item.id}>
-                    <div className="project-card-head" ref={projectMenuId === item.id ? projectMenuRef : null}>
+                  <article
+                    className="project-preview-card"
+                    key={item.id}
+                    role="link"
+                    tabIndex={0}
+                    onClick={() => navigate(firstStepPath(item.id))}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        navigate(firstStepPath(item.id));
+                      }
+                    }}
+                  >
+                    <div
+                      className="project-card-head"
+                      ref={projectMenuId === item.id ? projectMenuRef : null}
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
                       <button
                         className="project-menu-trigger"
                         type="button"
@@ -1265,9 +1315,7 @@ function HomePage() {
                           "--project-cover-image": `url("${coverUrl}")`,
                         } as React.CSSProperties
                       }
-                    >
-                      <span className={`cover-badge ${badge === "已发布" ? "warn" : ""}`}>{badge}</span>
-                    </div>
+                    />
                     <h3>{item.name}</h3>
                     <p>{item.status}</p>
                     <div className="project-progress-row">
@@ -1281,11 +1329,35 @@ function HomePage() {
                 );
               })}
 
-              <article className="project-preview-card new-entry">
+              <article
+                className="project-preview-card new-entry"
+                role="button"
+                tabIndex={0}
+                aria-disabled={creating}
+                onClick={() => {
+                  if (!creating) {
+                    void handleStartCreationJourney();
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if ((event.key === "Enter" || event.key === " ") && !creating) {
+                    event.preventDefault();
+                    void handleStartCreationJourney();
+                  }
+                }}
+              >
                 <div className="new-entry-circle">+</div>
                 <h3>创建新项目</h3>
                 <p>{loading ? "正在加载项目..." : `当前已保存 ${projects.length} 个项目`}</p>
-                <button className="primary-pill inline-pill" type="button" onClick={handleStartCreationJourney} disabled={creating}>
+                <button
+                  className="primary-pill inline-pill"
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void handleStartCreationJourney();
+                  }}
+                  disabled={creating}
+                >
                   {creating ? "创建中..." : "新建并进入创作"}
                 </button>
               </article>
@@ -1340,9 +1412,8 @@ function HomePage() {
                   <div className="dashboard-card-head">
                     <div>
                       <span className="dashboard-panel-title">{dashboardOverview.trend_title}</span>
-                      <strong>{dashboardOverview.trend_total}</strong>
+                      <strong>总播放量</strong>
                     </div>
-                    <span className="dashboard-panel-note">{dashboardOverview.trend_peak_note}</span>
                   </div>
                   <div className="line-chart-area">
                     <div className="line-chart-yaxis">
@@ -1376,8 +1447,15 @@ function HomePage() {
                             <stop offset="100%" stopColor="rgba(233, 196, 106, 0)" />
                           </linearGradient>
                         </defs>
-                        <path d={dashboardOverview.trend_area_path} fill="url(#dashboardLineFill)" />
                         <path
+                          key={`${dashboardRange}-trend-area`}
+                          className="line-chart-area-path"
+                          d={dashboardOverview.trend_area_path}
+                          fill="url(#dashboardLineFill)"
+                        />
+                        <path
+                          key={`${dashboardRange}-trend-line`}
+                          className="line-chart-line-path"
                           d={dashboardOverview.trend_line_path}
                           fill="none"
                           stroke="url(#dashboardLineStroke)"
@@ -1424,11 +1502,36 @@ function HomePage() {
                     </div>
                   </div>
                   <div className="donut-panel-body">
-                    <div className="donut-chart" />
+                    <div
+                      className="donut-chart"
+                      onPointerLeave={() => setActiveTrafficIndex(null)}
+                    >
+                      <svg viewBox="0 0 200 200" aria-label="流量来源占比">
+                        <circle className="donut-track" cx="100" cy="100" r={dashboardDonutRadius} />
+                        {dashboardDonutSegments.map((segment, index) => (
+                          <circle
+                            className={`donut-segment${activeTrafficIndex === index ? " active" : ""}`}
+                            key={segment.label}
+                            cx="100"
+                            cy="100"
+                            r={dashboardDonutRadius}
+                            stroke={segment.color}
+                            strokeDasharray={`${segment.dashLength} ${dashboardDonutCircumference - segment.dashLength}`}
+                            strokeDashoffset={segment.dashOffset}
+                            onPointerEnter={() => setActiveTrafficIndex(index)}
+                          />
+                        ))}
+                      </svg>
+                    </div>
                     <div className="donut-legend">
-                      {dashboardOverview.traffic_sources.map((item) => (
-                        <span key={item.label}>
-                          <i />
+                      {dashboardOverview.traffic_sources.map((item, index) => (
+                        <span
+                          className={activeTrafficIndex === index ? "active" : ""}
+                          key={item.label}
+                          onPointerEnter={() => setActiveTrafficIndex(index)}
+                          onPointerLeave={() => setActiveTrafficIndex(null)}
+                        >
+                          <i style={{ "--legend-color": dashboardTrafficColors[index % dashboardTrafficColors.length] } as React.CSSProperties} />
                           <b>{item.label}</b>
                           <strong>{item.value}</strong>
                         </span>
@@ -1486,7 +1589,9 @@ function HomePage() {
                     </div>
                     {dashboardOverview.distribution_rows.map((row) => (
                       <div className="distribution-table-row" key={row.platform}>
-                        <span>{row.platform}</span>
+                        <span className="distribution-platform">
+                          {renderRollingTableValue(row.platform)}
+                        </span>
                         <span className="distribution-data-value" key={`${row.platform}-${row.plays}`}>
                           {renderRollingTableValue(row.plays)}
                         </span>
