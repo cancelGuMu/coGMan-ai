@@ -11,6 +11,21 @@ export type StepId =
   | "final-editing"
   | "publish-review";
 
+export type StepCompletionStatus = "not-started" | "drafting" | "generated" | "reviewing" | "completed";
+
+export type WorkflowStepDetail = {
+  id: StepId;
+  no: string;
+  label: string;
+  short_title: string;
+  title: string;
+  summary: string;
+  primary_output: string;
+  upstream: string;
+  downstream: string;
+  status_hint: string;
+};
+
 export type EpisodeDraft = {
   episode_number: number;
   title: string;
