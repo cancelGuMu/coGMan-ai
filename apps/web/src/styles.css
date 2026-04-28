@@ -1583,13 +1583,9 @@ select:focus {
     inset 0 1px 0 rgba(255, 245, 218, 0.24);
 }
 
-.workflow-ring-card:hover {
-  transform: translate3d(-50%, -50%, 0) rotateY(var(--angle)) translateZ(calc(var(--card-depth, 540px) + 18px));
-}
-
 .workflow-ring-card:hover .workflow-ring-card-face {
   opacity: 1;
-  transform: rotateY(var(--counter-angle)) scale(calc(var(--card-scale, 1) + 0.035));
+  transform: rotateY(var(--counter-angle)) scale(var(--card-scale, 1));
 }
 
 .workflow-card:hover::after {
@@ -1743,10 +1739,6 @@ select:focus {
   .workflow-ring-card-face {
     opacity: 1;
     transform: none;
-  }
-
-  .workflow-ring-card:hover {
-    transform: translateY(-6px);
   }
 
   .workflow-ring-card:hover .workflow-ring-card-face {
