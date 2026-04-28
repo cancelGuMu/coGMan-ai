@@ -2130,6 +2130,14 @@ select:focus {
   color: #f4dfa7;
   font: inherit;
   cursor: pointer;
+  box-shadow: none;
+}
+
+.dashboard-range-select select:focus,
+.dashboard-range-select select:focus-visible {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .dashboard-range-select select option {
@@ -2146,7 +2154,8 @@ select:focus {
 .dashboard-range-select:focus-within {
   background: rgba(74, 53, 28, 0.56);
   color: #ecd59c;
-  border-color: rgba(255, 227, 164, 0.22);
+  border-color: rgba(255, 227, 164, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 244, 214, 0.08);
 }
 
 .dashboard-range-button.active {
@@ -2571,7 +2580,7 @@ select:focus {
 
 .total-plays-head,
 .total-plays-row {
-  grid-template-columns: 1fr 1.05fr 1.15fr;
+  grid-template-columns: 1fr 1.05fr minmax(112px, 0.85fr) 1.15fr;
 }
 
 .distribution-table-head {
@@ -2597,6 +2606,32 @@ select:focus {
 .total-plays-growth {
   color: #9fcd86;
   font-size: 14px;
+}
+
+.total-plays-sparkline {
+  display: block;
+  width: 112px;
+  height: 38px;
+}
+
+.total-plays-sparkline svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.sparkline-fill {
+  fill: rgba(232, 189, 99, 0.1);
+}
+
+.sparkline-line {
+  fill: none;
+  stroke: #f2d99a;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 8px rgba(255, 224, 138, 0.28));
 }
 
 .distribution-table-divider {
@@ -3570,6 +3605,10 @@ select:focus {
   .total-plays-head,
   .total-plays-row {
     grid-template-columns: 1fr;
+  }
+
+  .total-plays-sparkline {
+    width: min(100%, 180px);
   }
 
   .bottom-cta-card {

@@ -151,6 +151,20 @@ function getDashboardTrendPoints(overview: DashboardOverview): DashboardChartPoi
   }));
 }
 
+function getDashboardMiniTrendPath(overview: DashboardOverview) {
+  const points = getDashboardTrendPoints(overview);
+  if (!points.length) return "";
+
+  const maxX = Math.max(...points.map((point) => point.x), 1);
+  return points
+    .map((point, index) => {
+      const x = (point.x / maxX) * 112;
+      const y = 34 - ((dashboardChartHeight - point.y) / dashboardChartHeight) * 28;
+      return `${index === 0 ? "M" : "L"}${x.toFixed(1)} ${Math.max(4, Math.min(34, y)).toFixed(1)}`;
+    })
+    .join(" ");
+}
+
 function getDashboardDonutSegments(overview: DashboardOverview): DashboardDonutSegment[] {
   const rawValues = overview.traffic_sources.map((item) => Math.max(0, parseDashboardValue(item.value)));
   const total = rawValues.reduce((sum, value) => sum + value, 0) || 1;
@@ -691,6 +705,7 @@ function HomePage() {
       label: option.label,
       value: playsMetric?.value ?? "-",
       growth: playsMetric?.growth ?? "",
+      trendPath: getDashboardMiniTrendPath(overview),
     };
   });
   const dashboardTrendPoints = useMemo(() => getDashboardTrendPoints(dashboardOverview), [dashboardOverview]);
@@ -1605,6 +1620,7 @@ function HomePage() {
                       <div className="distribution-table-head total-plays-head">
                         <span>时间范围</span>
                         <span>总播放量</span>
+                        <span>趋势</span>
                         <span>对比表现</span>
                       </div>
                       {dashboardTotalPlayRows.map((row) => (
@@ -1614,6 +1630,12 @@ function HomePage() {
                           </span>
                           <span className="distribution-data-value" key={`${row.label}-${row.value}`}>
                             {renderRollingTableValue(row.value)}
+                          </span>
+                          <span className="total-plays-sparkline" aria-hidden="true">
+                            <svg viewBox="0 0 112 38" preserveAspectRatio="none">
+                              <path className="sparkline-fill" d={`${row.trendPath} L112 38 L0 38 Z`} />
+                              <path className="sparkline-line" d={row.trendPath} />
+                            </svg>
                           </span>
                           <span className="distribution-data-value total-plays-growth" key={`${row.label}-${row.growth}`}>
                             {renderRollingTableValue(row.growth)}
