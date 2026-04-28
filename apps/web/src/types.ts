@@ -1,13 +1,15 @@
 export type StepId =
-  | "topic-planning"
+  | "story-structure"
   | "script-creation"
-  | "storyboard-design"
-  | "character-image"
-  | "image-to-video"
-  | "voice-subtitle"
-  | "editing-export"
-  | "distribution"
-  | "data-review";
+  | "asset-setting"
+  | "storyboard-planning"
+  | "prompt-generation"
+  | "image-generation"
+  | "quality-rework"
+  | "video-generation"
+  | "audio-subtitle"
+  | "final-editing"
+  | "publish-review";
 
 export type EpisodeDraft = {
   episode_number: number;

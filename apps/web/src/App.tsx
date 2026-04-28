@@ -59,7 +59,18 @@ type DashboardDonutSegment = {
 };
 
 function resolveStepId(value?: string) {
-  return workflowSteps.some((step) => step.id === value) ? value : workflowSteps[0].id;
+  const legacyStepMap: Record<string, string> = {
+    "topic-planning": "story-structure",
+    "storyboard-design": "storyboard-planning",
+    "character-image": "image-generation",
+    "image-to-video": "video-generation",
+    "voice-subtitle": "audio-subtitle",
+    "editing-export": "final-editing",
+    distribution: "publish-review",
+    "data-review": "publish-review",
+  };
+  const normalizedValue = value ? legacyStepMap[value] ?? value : value;
+  return workflowSteps.some((step) => step.id === normalizedValue) ? normalizedValue : workflowSteps[0].id;
 }
 
 function createCenterPath(stepId: string, projectId?: string) {
@@ -162,9 +173,9 @@ function getDashboardDonutSegments(overview: DashboardOverview): DashboardDonutS
 const workflowShowcase = [
   {
     no: "01",
-    title: "选题策划",
-    summary: "从项目名称、故事核心和集数规划开始，快速建立整季内容骨架。",
-    tags: ["项目立项", "季纲生成"],
+    title: "故事架构",
+    summary: "建立世界观、主线目标、人物关系与季集结构，先把整季故事骨架搭稳。",
+    tags: ["世界观", "季集结构"],
   },
   {
     no: "02",
@@ -174,45 +185,57 @@ const workflowShowcase = [
   },
   {
     no: "03",
-    title: "分镜设计",
-    summary: "把文字拆成镜头语言，输出清晰的画面结构与镜头节奏。",
-    tags: ["镜头规划", "视觉节奏"],
+    title: "资产设定",
+    summary: "沉淀角色、场景、道具、服装、画风和生成规则，统一后续视觉资产。",
+    tags: ["资产库", "风格板"],
   },
   {
     no: "04",
-    title: "角色生图",
-    summary: "统一角色设定和风格标签，保持角色在多轮生成中的一致性。",
-    tags: ["角色设定", "形象统一"],
+    title: "分镜规划",
+    summary: "把剧本文字拆成镜头级生产表，明确画面、动作、景别、台词和时长。",
+    tags: ["镜头表", "节奏规划"],
   },
   {
     no: "05",
-    title: "图生视频",
-    summary: "将关键画面推进为动态镜头，形成适合传播的短视频素材。",
-    tags: ["动态生成", "视频草稿"],
+    title: "提词生成",
+    summary: "把分镜和资产转成图片、视频模型可执行的结构化提示词。",
+    tags: ["T2I 提词", "I2V 提词"],
   },
   {
     no: "06",
-    title: "配音字幕",
-    summary: "补齐配音、字幕和语气节奏，让故事表达更完整、更有情绪。",
-    tags: ["AI 配音", "字幕同步"],
+    title: "画面生成",
+    summary: "批量生成静帧、关键帧和分镜图，为视频生成准备高质量素材。",
+    tags: ["关键帧", "批量生成"],
   },
   {
     no: "07",
-    title: "剪辑导出",
-    summary: "整合镜头、声音和节奏节点，快速输出可发布的视频版本。",
-    tags: ["成片剪辑", "一键导出"],
+    title: "质检返工",
+    summary: "检查角色、场景、风格和镜头逻辑，修复问题素材后再进入视频环节。",
+    tags: ["素材质检", "返工修复"],
   },
   {
     no: "08",
-    title: "矩阵发布",
-    summary: "针对不同平台进行分发适配，规划发布时间和内容节奏。",
-    tags: ["平台分发", "多端适配"],
+    title: "视频生成",
+    summary: "把通过质检的关键帧转为动态镜头，产出可剪辑的视频片段。",
+    tags: ["动态镜头", "片段预览"],
   },
   {
     no: "09",
-    title: "数据复盘",
-    summary: "观察数据表现，反推内容策略，为下一轮创作提供决策依据。",
-    tags: ["效果分析", "内容迭代"],
+    title: "音频字幕",
+    summary: "完成配音、旁白、口型同步、字幕、音效和背景音乐等声音层生产。",
+    tags: ["配音", "字幕轨"],
+  },
+  {
+    no: "10",
+    title: "剪辑成片",
+    summary: "整合镜头视频、配音、字幕、音乐和音效，导出可发布成片。",
+    tags: ["成片剪辑", "平台版本"],
+  },
+  {
+    no: "11",
+    title: "发布复盘",
+    summary: "完成发布适配、数据追踪和复盘报告，让数据反哺下一轮创作。",
+    tags: ["发布适配", "数据回流"],
   },
 ] as const;
 
@@ -995,7 +1018,7 @@ function HomePage() {
                 <span>从灵感到爆款</span>
               </h1>
               <p>
-                从展示页直接进入真实工作台，把选题策划、剧本创作、分镜设计到数据复盘串成一条完整的创作链路。
+                从展示页直接进入真实工作台，把故事架构、剧本创作、资产设定到发布复盘串成一条完整的创作链路。
               </p>
               <div className="hero-actions">
                 <button className="hero-button" type="button" onClick={handleCreateProject} disabled={creating}>
@@ -1174,8 +1197,8 @@ function HomePage() {
         <section className="workflow-section" id="workflow">
           <div className="page-container">
             <div className="section-intro">
-              <h2>从灵感到爆款的九步工作流</h2>
-              <p>当前网站中的实际实现已对齐为 9 个步骤，并以可拖拽的 3D 环形方式在首页中展示。</p>
+              <h2>从灵感到爆款的十一步工作流</h2>
+              <p>当前网站中的实际实现已对齐为 11 个步骤，并以可拖拽的 3D 环形方式在首页中展示。</p>
               <Link className="primary-pill inline-pill" to="/create-center">
                 查看完整流程
               </Link>
@@ -1639,7 +1662,7 @@ function HomePage() {
             <div className="bottom-cta-card">
               <div className="bottom-cta-copy">
                 <h2>开启你的 AI 漫剧创作之旅</h2>
-                <p>从选题、季纲、剧本，到镜头、发布和数据复盘，把整套流程沉淀成一个真正可用的创作系统。</p>
+                <p>从故事架构、剧本、资产，到镜头、发布和复盘，把整套流程沉淀成一个真正可用的创作系统。</p>
                 <button className="primary-pill bottom-cta-button" type="button" onClick={handleStartCreationJourney} disabled={creating}>
                   {creating ? "创建中..." : "立即开始创作"}
                 </button>
@@ -1790,7 +1813,7 @@ function CreateCenterPage() {
       if (!nextProjects.length) {
         setSelectedProjectId("");
         setProject(null);
-        setStatusMessage("还没有项目，先创建一个项目开启九步创作流程。");
+        setStatusMessage("还没有项目，先创建一个项目开启十一步创作流程。");
         return;
       }
 
@@ -1914,9 +1937,9 @@ function CreateCenterPage() {
               );
             }}
             shellClassName="workspace-shell create-center-shell"
-            headerEyebrow="九步创作流"
+            headerEyebrow="十一步创作流"
             headerTitle={project.name}
-            headerDescription="步骤一与步骤二已经正式融入创作中心，步骤三到步骤九的页面骨架、导航入口与占位区块也已同步搭好。"
+            headerDescription="步骤一与步骤二已经正式融入创作中心，步骤三到步骤十一的页面骨架、导航入口与占位区块也已同步搭好。"
             headerMeta={
               <>
                 <div className="project-switch-dropdown">
@@ -1943,14 +1966,14 @@ function CreateCenterPage() {
               </>
             }
             summaryLabel="创作项目"
-            summaryCaption="九步流程进度"
+            summaryCaption="十一步流程进度"
           />
         ) : (
           <section className="page-container create-center-empty-state">
             <div className="coming-soon-panel create-center-empty-panel">
               <span className="coming-soon-badge">START NOW</span>
-              <h2>先创建一个项目，再开始九步创作流程</h2>
-              <p>创建完成后，这里会自动载入步骤一到步骤九的工作区，步骤一和步骤二可以立即开始编辑和保存。</p>
+              <h2>先创建一个项目，再开始十一步创作流程</h2>
+              <p>创建完成后，这里会自动载入步骤一到步骤十一的工作区，步骤一和步骤二可以立即开始编辑和保存。</p>
             </div>
           </section>
         )}
@@ -2031,7 +2054,7 @@ function CreativeWorkspaceContent({
 
         <div className="status-banner">{statusMessage}</div>
 
-        {activeStep.id === "topic-planning" ? (
+        {activeStep.id === "story-structure" ? (
           <StepOneSection
             project={project}
             onSaved={(nextProject, message) => {
@@ -2051,7 +2074,7 @@ function CreativeWorkspaceContent({
           />
         ) : null}
 
-        {activeStep.id !== "topic-planning" && activeStep.id !== "script-creation" ? (
+        {activeStep.id !== "story-structure" && activeStep.id !== "script-creation" ? (
           <article className="placeholder-card single-step-page" id={activeStep.id}>
             <div className="placeholder-badge">{activeStep.label}</div>
             <h3>{activeStep.label.replace(/^\d+\s*/, "")}</h3>
@@ -2290,12 +2313,12 @@ function StepOneSection({
   }
 
   return (
-    <section className="editor-section" id="topic-planning">
+    <section className="editor-section" id="story-structure">
       <div className="section-headline">
         <div>
           <span className="eyebrow">步骤一</span>
-          <h2>选题策划</h2>
-          <p>支持从未关联项目状态开始填写，保存后自动创建项目并完成关联，同时回显季纲内容。</p>
+          <h2>故事架构</h2>
+          <p>支持从未关联项目状态开始填写，保存后自动创建项目并完成关联，同时回显故事骨架与季纲内容。</p>
         </div>
         <div className="chip-row">
           <span className="ghost-chip">项目关联：{form.linked_project ? "已关联" : "未关联"}</span>
@@ -2976,6 +2999,25 @@ function renderWorkflowWatermark(stepNo: string) {
         </svg>
       );
     case "09":
+      return (
+        <svg viewBox="0 0 220 220" role="presentation">
+          <path d="M124 58 V126" />
+          <rect x="104" y="52" width="40" height="80" rx="20" />
+          <path d="M88 96 C88 120, 100 140, 124 144 C148 140, 160 120, 160 96" />
+          <path d="M124 144 V170" />
+        </svg>
+      );
+    case "10":
+      return (
+        <svg viewBox="0 0 220 220" role="presentation">
+          <path d="M82 124 H182" />
+          <circle cx="98" cy="124" r="10" />
+          <circle cx="132" cy="124" r="10" />
+          <circle cx="166" cy="124" r="10" />
+          <path d="M82 92 H150" />
+        </svg>
+      );
+    case "11":
     default:
       return (
         <svg viewBox="0 0 220 220" role="presentation">

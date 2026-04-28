@@ -18,6 +18,18 @@ from .models import (
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA_FILE = ROOT / "data" / "projects.json"
+LEGACY_STEP_MAP = {
+    "topic-planning": "story-structure",
+    "storyboard-design": "storyboard-planning",
+    "character-image": "image-generation",
+    "image-to-video": "video-generation",
+    "voice-subtitle": "audio-subtitle",
+    "editing-export": "final-editing",
+    "distribution": "publish-review",
+    "data-review": "publish-review",
+}
+
+
 def _ensure_file() -> None:
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
     if not DATA_FILE.exists():
@@ -27,7 +39,12 @@ def _ensure_file() -> None:
 def _read_records() -> list[ProjectRecord]:
     _ensure_file()
     raw = json.loads(DATA_FILE.read_text(encoding="utf-8"))
-    return [ProjectRecord.model_validate(item) for item in raw.get("projects", [])]
+    records = []
+    for item in raw.get("projects", []):
+        if item.get("current_step") in LEGACY_STEP_MAP:
+            item = {**item, "current_step": LEGACY_STEP_MAP[item["current_step"]]}
+        records.append(ProjectRecord.model_validate(item))
+    return records
 
 
 def _write_records(records: list[ProjectRecord]) -> None:
@@ -141,10 +158,10 @@ def save_step_one(project_id: str, payload: SaveStepOneRequest) -> ProjectRecord
         updated = record.model_copy(
             update={
                 "name": incoming.project_name.strip() or record.name,
-                "status": "选题策划中" if content_done < episode_count else "待剧本创作",
+                "status": "故事架构中" if content_done < episode_count else "待剧本创作",
                 "progress": progress,
                 "updated_at": datetime.now(),
-                "current_step": "topic-planning" if content_done < episode_count else "script-creation",
+                "current_step": "story-structure" if content_done < episode_count else "script-creation",
                 "step_one": incoming.model_copy(update={"linked_project": True, "episodes": episodes}),
             }
         )
@@ -171,10 +188,10 @@ def save_step_two(project_id: str, payload: SaveStepTwoRequest) -> ProjectRecord
         updated = record.model_copy(
             update={
                 "name": incoming.project_name.strip() or record.name,
-                "status": "剧本创作中" if not script_ready else "待分镜设计",
+                "status": "剧本创作中" if not script_ready else "待资产设定",
                 "progress": 55 if not script_ready else 72,
                 "updated_at": datetime.now(),
-                "current_step": "script-creation" if not script_ready else "storyboard-design",
+                "current_step": "script-creation" if not script_ready else "asset-setting",
                 "step_two": incoming.model_copy(
                     update={
                         "body_readiness": body_ready,

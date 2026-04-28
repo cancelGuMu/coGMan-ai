@@ -7,15 +7,17 @@ from pydantic import BaseModel, Field
 
 
 StepId = Literal[
-    "topic-planning",
+    "story-structure",
     "script-creation",
-    "storyboard-design",
-    "character-image",
-    "image-to-video",
-    "voice-subtitle",
-    "editing-export",
-    "distribution",
-    "data-review",
+    "asset-setting",
+    "storyboard-planning",
+    "prompt-generation",
+    "image-generation",
+    "quality-rework",
+    "video-generation",
+    "audio-subtitle",
+    "final-editing",
+    "publish-review",
 ]
 
 
@@ -83,7 +85,7 @@ class ProjectRecord(BaseModel):
     cover_image_url: str | None = None
     created_at: datetime
     updated_at: datetime
-    current_step: StepId = "topic-planning"
+    current_step: StepId = "story-structure"
     step_one: StepOneData = Field(default_factory=StepOneData)
     step_two: StepTwoData = Field(default_factory=StepTwoData)
 

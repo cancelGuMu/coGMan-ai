@@ -1,15 +1,17 @@
 import type { ProjectRecord, StepId, StepOneData, StepTwoData } from "./types";
 
 export const workflowSteps: Array<{ id: StepId; label: string }> = [
-  { id: "topic-planning", label: "01 选题策划" },
+  { id: "story-structure", label: "01 故事架构" },
   { id: "script-creation", label: "02 剧本创作" },
-  { id: "storyboard-design", label: "03 分镜设计" },
-  { id: "character-image", label: "04 角色生图" },
-  { id: "image-to-video", label: "05 图生视频" },
-  { id: "voice-subtitle", label: "06 配音字幕" },
-  { id: "editing-export", label: "07 剪辑导出" },
-  { id: "distribution", label: "08 矩阵发布" },
-  { id: "data-review", label: "09 数据复盘" },
+  { id: "asset-setting", label: "03 资产设定" },
+  { id: "storyboard-planning", label: "04 分镜规划" },
+  { id: "prompt-generation", label: "05 提词生成" },
+  { id: "image-generation", label: "06 画面生成" },
+  { id: "quality-rework", label: "07 质检返工" },
+  { id: "video-generation", label: "08 视频生成" },
+  { id: "audio-subtitle", label: "09 音频字幕" },
+  { id: "final-editing", label: "10 剪辑成片" },
+  { id: "publish-review", label: "11 发布复盘" },
 ];
 
 export function defaultStepOneData(projectName = ""): StepOneData {
