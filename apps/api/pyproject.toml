@@ -1,0 +1,20 @@
+[project]
+name = "cogman-ai-api"
+version = "0.1.0"
+description = "coGMan-ai backend"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn>=0.35.0",
+  "python-multipart>=0.0.20"
+]
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28.1",
+  "pytest>=8.3.5"
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
