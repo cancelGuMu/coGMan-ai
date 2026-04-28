@@ -1373,16 +1373,19 @@ function HomePage() {
                 <p>支持按时间范围切换看板内容，当前前端已接好接口位置，后端完成后可直接替换真实数据。</p>
               </div>
               <div className="dashboard-range-switch" aria-label="数据范围切换">
-                {dashboardRangeOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    className={`dashboard-range-button${dashboardRange === option.value ? " active" : ""}`}
-                    type="button"
-                    onClick={() => setDashboardRange(option.value)}
+                <label className="dashboard-range-select">
+                  <span>时间范围</span>
+                  <select
+                    value={dashboardRange}
+                    onChange={(event) => setDashboardRange(event.target.value as DashboardRange)}
                   >
-                    {option.label}
-                  </button>
-                ))}
+                    {dashboardRangeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
             </div>
             <div className="dashboard-board">
@@ -1581,6 +1584,27 @@ function HomePage() {
                     ref={distributionTableRef}
                     className={`distribution-table${isDistributionVisible ? " is-visible" : ""}`}
                   >
+                    <div className="total-plays-table">
+                      <div className="distribution-table-head total-plays-head">
+                        <span>时间范围</span>
+                        <span>总播放量</span>
+                        <span>对比表现</span>
+                      </div>
+                      {dashboardTotalPlayRows.map((row) => (
+                        <div className="distribution-table-row total-plays-row" key={row.label}>
+                          <span className="distribution-platform">
+                            {renderRollingTableValue(row.label)}
+                          </span>
+                          <span className="distribution-data-value" key={`${row.label}-${row.value}`}>
+                            {renderRollingTableValue(row.value)}
+                          </span>
+                          <span className="distribution-data-value total-plays-growth" key={`${row.label}-${row.growth}`}>
+                            {renderRollingTableValue(row.growth)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="distribution-table-divider" />
                     <div className="distribution-table-head">
                       <span>平台</span>
                       <span>播放量</span>
