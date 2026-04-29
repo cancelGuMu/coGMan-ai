@@ -8,6 +8,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from .prompt_registry import build_text_messages
+
 
 class AIServiceError(RuntimeError):
     pass
@@ -66,29 +68,16 @@ def _get_json(url: str, headers: dict[str, str], timeout: int = 60) -> dict[str,
         raise AIServiceError(f"AI 接口连接失败：{exc.reason}") from exc
 
 
-def generate_deepseek_text(project_name: str, prompt: str, mode: str) -> str:
+def generate_deepseek_text(project_name: str, prompt: str, mode: str, task_id: str | None = None) -> str:
     api_key = _env("DEEPSEEK_API_KEY")
     if not api_key:
         raise AIServiceError("缺少 DEEPSEEK_API_KEY")
 
     base_url = _env("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
     model = _env("DEEPSEEK_TEXT_MODEL", "deepseek-v4-pro")
-    system_prompt = (
-        "你是 coMGan-ai 的 AI 漫剧生产线助手。"
-        "请使用中文输出，围绕连续漫剧创作流程给出可直接粘贴到工作台字段中的内容。"
-        "不要输出解释性寒暄，不要编造外部事实。"
-    )
-    user_prompt = (
-        f"项目名称：{project_name or '未命名项目'}\n"
-        f"任务模式：{mode}\n"
-        f"用户输入：\n{prompt or '请基于当前项目上下文生成内容。'}"
-    )
     payload = {
         "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
+        "messages": build_text_messages(project_name, prompt, mode, task_id),
         "stream": False,
         "reasoning_effort": _env("DEEPSEEK_REASONING_EFFORT", "high"),
         "thinking": {"type": _env("DEEPSEEK_THINKING", "enabled")},

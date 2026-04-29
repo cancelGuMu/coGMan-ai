@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -40,6 +41,7 @@ from .ai_services import (
     query_minimax_video,
     retrieve_minimax_file,
 )
+from .prompt_registry import describe_prompt_registry, get_prompt_task, validate_prompt_registry
 from .storage import (
     create_project,
     delete_project,
@@ -158,6 +160,35 @@ def _dashboard_range(range: str) -> str:
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok", "time": datetime.now().isoformat()}
+
+
+@app.get("/api/ai-tools/diagnostics")
+def api_ai_tools_diagnostics() -> dict:
+    registry_issues = validate_prompt_registry()
+    return {
+        "prompt_registry": {
+            **describe_prompt_registry(),
+            "status": "ok" if not registry_issues else "needs_fix",
+            "issues": registry_issues,
+        },
+        "providers": {
+            "deepseek_text": {
+                "configured": bool(os.environ.get("DEEPSEEK_API_KEY", "").strip()),
+                "default_model": os.environ.get("DEEPSEEK_TEXT_MODEL", "deepseek-v4-pro"),
+                "used_by": ["story-structure", "script-creation", "prompt-generation", "quality-rework", "publish-review"],
+            },
+            "image_generation": {
+                "configured": bool(os.environ.get("IMAGE_GENERATION_API_KEY", "").strip()),
+                "default_model": os.environ.get("IMAGE_GENERATION_MODEL", "gpt-image-2"),
+                "used_by": ["image-generation"],
+            },
+            "minimax_video": {
+                "configured": bool(os.environ.get("MINIMAX_API_KEY", "").strip()),
+                "default_model": os.environ.get("MINIMAX_VIDEO_MODEL", "MiniMax-Hailuo-2.3"),
+                "used_by": ["video-generation", "audio-subtitle"],
+            },
+        },
+    }
 
 
 @app.get("/api/projects", response_model=ProjectListResponse)
@@ -345,13 +376,14 @@ def api_save_step_eleven(project_id: str, payload: SaveStepElevenRequest) -> Pro
 
 @app.post("/api/generate/step-one-season-outline", response_model=GeneratedTextResponse)
 def generate_step_one_outline(payload: GenerationRequest) -> GeneratedTextResponse:
+    task = get_prompt_task(payload.task_id, payload.mode or "outline")
     prompt = (
-        "请为 coGMan-ai 的 AI 漫剧项目生成整季故事架构和单集大纲。"
-        "输出要包含每集标题、核心事件、爽点、钩子、反转和结尾悬念。\n\n"
+        f"{task.user_instruction}\n"
+        f"输出要求：{task.output_contract}\n\n"
         f"{payload.prompt}"
     )
     try:
-        content = generate_deepseek_text(payload.project_name, prompt, payload.mode or "outline")
+        content = generate_deepseek_text(payload.project_name, prompt, payload.mode or "outline", task.task_id)
     except AIServiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return GeneratedTextResponse(content=content, record="DeepSeek 生成季纲草案")
@@ -359,18 +391,10 @@ def generate_step_one_outline(payload: GenerationRequest) -> GeneratedTextRespon
 
 @app.post("/api/generate/step-two", response_model=GeneratedTextResponse)
 def generate_step_two(payload: GenerationRequest) -> GeneratedTextResponse:
-    mode_instruction = {
-        "reference": "生成可供剧本创作参考的文本方向。",
-        "novel": "生成小说正文样稿。",
-        "roles": "从素材中提炼角色画像。",
-        "terms": "整理术语库。",
-        "guidance": "生成写作指导。",
-        "script": "生成可拆分镜头的正式漫剧剧本。",
-        "check": "做人物动机、称谓、设定、时间线和剧情承接的一致性检查。",
-    }.get(payload.mode, "生成当前步骤需要的文本内容。")
-    prompt = f"{mode_instruction}\n\n{payload.prompt}"
+    task = get_prompt_task(payload.task_id, payload.mode)
+    prompt = f"{task.user_instruction}\n输出要求：{task.output_contract}\n\n{payload.prompt}"
     try:
-        content = generate_deepseek_text(payload.project_name, prompt, payload.mode)
+        content = generate_deepseek_text(payload.project_name, prompt, payload.mode, task.task_id)
     except AIServiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     label = {

@@ -526,6 +526,7 @@ class GenerationRequest(BaseModel):
     project_name: str = ""
     prompt: str = ""
     mode: str = "generic"
+    task_id: str | None = None
 
 
 class GeneratedTextResponse(BaseModel):
