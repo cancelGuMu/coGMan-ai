@@ -33,12 +33,36 @@ export type EpisodeDraft = {
   hook: string;
 };
 
+export type StoryRelationship = {
+  id: string;
+  character_a: string;
+  character_b: string;
+  relationship: string;
+  conflict: string;
+};
+
 export type StepOneData = {
   project_name: string;
+  genre: string;
+  target_audience: string;
+  target_platform: string;
   core_story_idea: string;
+  core_story_title: string;
+  world_background: string;
+  era_setting: string;
+  rule_system: string;
+  conflict_environment: string;
+  protagonist_goal: string;
+  antagonist_pressure: string;
+  core_conflict: string;
+  character_growth: string;
+  relationship_notes: string;
+  relationships: StoryRelationship[];
+  season_outline: string;
   season_episode_count: string;
   custom_episode_count: number | null;
   imported_story_name: string | null;
+  import_parse_status: string;
   linked_project: boolean;
   episodes: EpisodeDraft[];
 };

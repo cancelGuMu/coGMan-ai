@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
+  AIGenerationButtonGroup,
+  DualColumnLayout,
+  ImportFileButton,
+  LoadingSkeleton,
+  NextStepButton,
+  StepStatusDot,
+  VersionHistoryPanel,
+  type VersionRecord,
+} from "./components";
+import {
   createProject,
   deleteProject,
   fetchDashboardOverview,
@@ -22,6 +32,7 @@ import type {
   EpisodeDraft,
   ProjectRecord,
   ProjectSummary,
+  StepCompletionStatus,
   StepOneData,
   StepTwoData,
 } from "./types";
@@ -79,6 +90,20 @@ function createCenterPath(stepId: string, projectId?: string) {
 
 function firstStepPath(projectId?: string) {
   return createCenterPath(workflowSteps[0].id, projectId);
+}
+
+function getStepProgressIndex(stepId: string) {
+  return Math.max(0, workflowSteps.findIndex((step) => step.id === stepId));
+}
+
+function getStepCompletionStatus(project: ProjectRecord, stepId: string): StepCompletionStatus {
+  const activeIndex = getStepProgressIndex(project.current_step);
+  const stepIndex = getStepProgressIndex(stepId);
+  if (stepIndex < activeIndex) return "completed";
+  if (stepIndex > activeIndex) return "not-started";
+  if (project.progress >= 72) return "generated";
+  if (project.progress >= 35) return "drafting";
+  return "not-started";
 }
 
 function parseDashboardValue(value: string): number {
@@ -1819,6 +1844,27 @@ function CreateCenterPage() {
   const [projectLoading, setProjectLoading] = useState(false);
   const [error, setError] = useState("");
   const [statusMessage, setStatusMessage] = useState("正在加载创作中心...");
+  const [creatingProject, setCreatingProject] = useState(false);
+
+  async function handleCreateProjectFromCenter() {
+    setCreatingProject(true);
+    setError("");
+    try {
+      const now = new Date();
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const day = String(now.getDate()).padStart(2, "0");
+      const hour = String(now.getHours()).padStart(2, "0");
+      const minute = String(now.getMinutes()).padStart(2, "0");
+      const nextProject = await createProject(`新建漫剧项目 ${month}${day}-${hour}${minute}`);
+      await refreshProjects(nextProject.id);
+      setSelectedProjectId(nextProject.id);
+      setStatusMessage("新项目已创建，已进入步骤一。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "创建项目失败");
+    } finally {
+      setCreatingProject(false);
+    }
+  }
 
   async function refreshProjects(preferredProjectId?: string) {
     setProjectsLoading(true);
@@ -1927,7 +1973,9 @@ function CreateCenterPage() {
         {error ? <div className="page-container"><div className="status-banner create-center-status-banner">{error}</div></div> : null}
 
         {projectsLoading || projectLoading ? (
-          <div className="page-loading">正在加载创作中心内容...</div>
+          <div className="page-container create-center-loading">
+            <LoadingSkeleton rows={5} />
+          </div>
         ) : project ? (
           <CreativeWorkspaceContent
             project={project}
@@ -1961,6 +2009,14 @@ function CreateCenterPage() {
                 <div className="project-switch-dropdown">
                   <span className="project-switch-dropdown-label">切换项目</span>
                   <div className="project-switch-dropdown-options">
+                    <button
+                      className="project-switch-option create-new"
+                      type="button"
+                      onClick={() => void handleCreateProjectFromCenter()}
+                      disabled={creatingProject}
+                    >
+                      {creatingProject ? "创建中..." : "创建新项目"}
+                    </button>
                     {projects.length ? (
                       projects.map((item) => (
                         <button
@@ -1990,6 +2046,9 @@ function CreateCenterPage() {
               <span className="coming-soon-badge">START NOW</span>
               <h2>先创建一个项目，再开始十一步创作流程</h2>
               <p>创建完成后，这里会自动载入步骤一到步骤十一的工作区，步骤一和步骤二可以立即开始编辑和保存。</p>
+              <button className="primary-pill inline-pill" type="button" onClick={() => void handleCreateProjectFromCenter()} disabled={creatingProject}>
+                {creatingProject ? "创建中..." : "创建新项目"}
+              </button>
             </div>
           </section>
         )}
@@ -2052,7 +2111,8 @@ function CreativeWorkspaceContent({
               to={createCenterPath(step.id, project.id)}
               className={`step-nav-item ${activeStep.id === step.id ? "active" : ""}`}
             >
-              {step.label}
+              <StepStatusDot status={getStepCompletionStatus(project, step.id)} />
+              <span>{step.label}</span>
             </Link>
           ))}
         </nav>
@@ -2209,9 +2269,11 @@ function StepOneSection({
 }) {
   const [form, setForm] = useState<StepOneData>(project.step_one);
   const [saving, setSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
 
   useEffect(() => {
     setForm(project.step_one);
+    setIsDirty(false);
   }, [project.step_one]);
 
   const stats = useMemo(() => {
@@ -2220,8 +2282,25 @@ function StepOneSection({
     const hookDone = form.episodes.filter((item) => item.hook.trim()).length;
     return { total, contentDone, hookDone };
   }, [form.episodes]);
+  const versionRecords = useMemo<VersionRecord[]>(
+    () => [
+      {
+        id: "step-one-current",
+        title: "当前故事架构草稿",
+        description: form.core_story_idea.trim() ? "已形成核心故事输入，可继续生成季纲。" : "等待输入核心故事。",
+        created_at: project.updated_at ? new Date(project.updated_at).toLocaleString("zh-CN") : "尚未保存",
+      },
+    ],
+    [form.core_story_idea, project.updated_at]
+  );
+
+  function updateForm(nextForm: StepOneData) {
+    setForm(nextForm);
+    setIsDirty(true);
+  }
 
   function updateEpisode(index: number, key: keyof EpisodeDraft, value: string) {
+    setIsDirty(true);
     setForm((current) => ({
       ...current,
       episodes: current.episodes.map((episode, episodeIndex) =>
@@ -2247,6 +2326,7 @@ function StepOneSection({
 
   function handleEpisodePresetChange(value: string) {
     const total = value === "自定义集数" ? Math.max(1, form.custom_episode_count ?? 12) : Number.parseInt(value, 10) || 12;
+    setIsDirty(true);
     setForm((current) => ({
       ...current,
       season_episode_count: value,
@@ -2256,6 +2336,7 @@ function StepOneSection({
 
   function handleCustomCountChange(value: number) {
     const total = Math.max(1, value || 1);
+    setIsDirty(true);
     setForm((current) => ({
       ...current,
       custom_episode_count: total,
@@ -2274,7 +2355,9 @@ function StepOneSection({
         ...current,
         imported_story_name: result.filename,
         core_story_idea: result.content,
+        import_parse_status: `已解析 ${result.content.length} 个字符`,
       }));
+      setIsDirty(true);
       setStatusMessage(`已导入文件：${result.filename}`);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "导入失败");
@@ -2297,8 +2380,11 @@ function StepOneSection({
         .filter((line) => line)
         .slice(0, form.episodes.length);
 
+      setIsDirty(true);
+      const mergedOutline = mergeChunkResults(partials);
       setForm((current) => ({
         ...current,
+        season_outline: mergedOutline,
         episodes: current.episodes.map((episode, index) => ({
           ...episode,
           content: lines[index] ?? episode.content,
@@ -2320,6 +2406,7 @@ function StepOneSection({
         project_name: form.project_name || project.name,
         linked_project: true,
       });
+      setIsDirty(false);
       onSaved(saved, "步骤一数据已保存并自动关联项目");
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "保存失败");
@@ -2344,14 +2431,43 @@ function StepOneSection({
         </div>
       </div>
 
+      <div className="story-foundation-grid">
+        <div className="panel-card">
+          <h3>项目基础信息</h3>
+          <div className="field-row compact-row">
+            <label className="field-label">
+              <span>题材类型</span>
+              <input value={form.genre} onChange={(event) => updateForm({ ...form, genre: event.target.value })} placeholder="例如：都市异能、古风武侠" />
+            </label>
+            <label className="field-label">
+              <span>目标受众</span>
+              <input value={form.target_audience} onChange={(event) => updateForm({ ...form, target_audience: event.target.value })} placeholder="例如：18-30 岁短剧用户" />
+            </label>
+            <label className="field-label">
+              <span>目标平台</span>
+              <input value={form.target_platform} onChange={(event) => updateForm({ ...form, target_platform: event.target.value })} placeholder="例如：抖音 / 快手 / B站" />
+            </label>
+          </div>
+        </div>
+      </div>
+
       <div className="editor-grid">
         <div className="panel-card">
           <label className="field-label">
             <span>项目名称</span>
             <input
               value={form.project_name}
-              onChange={(event) => setForm({ ...form, project_name: event.target.value })}
+              onChange={(event) => updateForm({ ...form, project_name: event.target.value })}
               placeholder="输入项目名称"
+            />
+          </label>
+
+          <label className="field-label">
+            <span>核心故事标题</span>
+            <input
+              value={form.core_story_title}
+              onChange={(event) => updateForm({ ...form, core_story_title: event.target.value })}
+              placeholder="给核心故事起一个便于识别的标题"
             />
           </label>
 
@@ -2359,7 +2475,7 @@ function StepOneSection({
             <span>核心故事思路</span>
             <textarea
               value={form.core_story_idea}
-              onChange={(event) => setForm({ ...form, core_story_idea: event.target.value })}
+              onChange={(event) => updateForm({ ...form, core_story_idea: event.target.value })}
               placeholder="输入核心故事思路，或导入 .txt / .md / .docx 文件"
               rows={7}
             />
@@ -2389,22 +2505,30 @@ function StepOneSection({
           </div>
 
           <div className="action-row">
-            <button className="primary-pill inline-pill" type="button" onClick={handleGenerateOutline}>
-              AI 生成季纲草案
-            </button>
-            <label className="ghost-button inline-button">
-              导入故事思路文件
-              <input type="file" accept=".txt,.md,.docx" onChange={handleImport} hidden />
-            </label>
-            <button className="ghost-button inline-button" type="button" onClick={() => setForm(defaultStepOneData(project.name))}>
+            <AIGenerationButtonGroup
+              onGenerate={() => void handleGenerateOutline()}
+              onCopyPrompt={() => {
+                void navigator.clipboard?.writeText(form.core_story_idea || "请基于项目设定生成季纲。");
+                setStatusMessage("已复制步骤一生成提示词");
+              }}
+            />
+            <ImportFileButton label="导入故事思路文件" filename={form.imported_story_name} onChange={handleImport} />
+            <button className="ghost-button inline-button" type="button" onClick={() => updateForm(defaultStepOneData(project.name))}>
               清空当前步骤
             </button>
             <button className="ghost-button inline-button strong" type="button" onClick={handleSave} disabled={saving}>
               {saving ? "保存中..." : "保存当前步骤"}
             </button>
+            <NextStepButton
+              disabled={!form.core_story_idea.trim()}
+              onClick={() => setStatusMessage(form.core_story_idea.trim() ? "步骤一基础信息已具备，可以保存后进入剧本创作。" : "请先填写核心故事思路。")}
+            />
           </div>
 
-          {form.imported_story_name ? <div className="hint-text">已导入文件：{form.imported_story_name}</div> : null}
+          <div className="hint-text">
+            {isDirty ? "当前步骤有未保存修改。" : "当前步骤已与项目数据同步。"}
+            {form.imported_story_name ? ` 已导入文件：${form.imported_story_name}，${form.import_parse_status}` : ""}
+          </div>
         </div>
 
         <div className="panel-card overview-panel">
@@ -2416,6 +2540,90 @@ function StepOneSection({
                 <span>{episode.content.trim() ? episode.content.slice(0, 30) : "待填写本集内容"}</span>
               </div>
             ))}
+          </div>
+          <VersionHistoryPanel versions={versionRecords} />
+        </div>
+      </div>
+
+      <div className="story-foundation-grid">
+        <div className="panel-card">
+          <h3>世界观编辑</h3>
+          <label className="field-label">
+            <span>世界背景</span>
+            <textarea rows={4} value={form.world_background} onChange={(event) => updateForm({ ...form, world_background: event.target.value })} placeholder="描述故事发生的世界、地域、社会结构。" />
+          </label>
+          <label className="field-label">
+            <span>时代设定</span>
+            <input value={form.era_setting} onChange={(event) => updateForm({ ...form, era_setting: event.target.value })} placeholder="例如：近未来、架空古代、现代都市" />
+          </label>
+          <label className="field-label">
+            <span>规则体系</span>
+            <textarea rows={3} value={form.rule_system} onChange={(event) => updateForm({ ...form, rule_system: event.target.value })} placeholder="能力、组织、资源、禁忌或世界运行规则。" />
+          </label>
+          <label className="field-label">
+            <span>冲突环境</span>
+            <textarea rows={3} value={form.conflict_environment} onChange={(event) => updateForm({ ...form, conflict_environment: event.target.value })} placeholder="外部压力、时代矛盾、社会冲突或生存困境。" />
+          </label>
+        </div>
+
+        <div className="panel-card">
+          <h3>主线目标</h3>
+          <label className="field-label">
+            <span>主角目标</span>
+            <textarea rows={3} value={form.protagonist_goal} onChange={(event) => updateForm({ ...form, protagonist_goal: event.target.value })} placeholder="主角想得到什么、守护什么或改变什么。" />
+          </label>
+          <label className="field-label">
+            <span>反派阻力</span>
+            <textarea rows={3} value={form.antagonist_pressure} onChange={(event) => updateForm({ ...form, antagonist_pressure: event.target.value })} placeholder="反派或对立力量如何制造阻碍。" />
+          </label>
+          <label className="field-label">
+            <span>核心矛盾</span>
+            <textarea rows={3} value={form.core_conflict} onChange={(event) => updateForm({ ...form, core_conflict: event.target.value })} placeholder="贯穿全季的主要冲突。" />
+          </label>
+          <label className="field-label">
+            <span>成长线</span>
+            <textarea rows={3} value={form.character_growth} onChange={(event) => updateForm({ ...form, character_growth: event.target.value })} placeholder="主角从哪里出发，最终完成怎样的变化。" />
+          </label>
+        </div>
+
+        <div className="panel-card">
+          <h3>人物关系</h3>
+          <label className="field-label">
+            <span>关系说明</span>
+            <textarea rows={5} value={form.relationship_notes} onChange={(event) => updateForm({ ...form, relationship_notes: event.target.value })} placeholder="用自然语言描述主要人物、阵营和关系张力。" />
+          </label>
+          <button
+            className="ghost-button inline-button"
+            type="button"
+            onClick={() =>
+              updateForm({
+                ...form,
+                relationships: [
+                  ...form.relationships,
+                  {
+                    id: `rel-${Date.now()}`,
+                    character_a: "主角",
+                    character_b: "对手",
+                    relationship: "目标冲突",
+                    conflict: "围绕同一资源产生竞争",
+                  },
+                ],
+              })
+            }
+          >
+            添加关系样例
+          </button>
+          <div className="overview-list relationship-list">
+            {form.relationships.length ? (
+              form.relationships.map((item) => (
+                <div className="overview-item" key={item.id}>
+                  <strong>{item.character_a} / {item.character_b}</strong>
+                  <span>{item.relationship}：{item.conflict}</span>
+                </div>
+              ))
+            ) : (
+              <div className="hint-text">暂无结构化人物关系，可先填写关系说明。</div>
+            )}
           </div>
         </div>
       </div>

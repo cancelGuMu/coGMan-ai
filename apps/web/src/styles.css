@@ -2980,8 +2980,18 @@ select:focus {
   cursor: default;
 }
 
+.project-switch-option.create-new {
+  border-color: rgba(255, 228, 168, 0.2);
+  background: linear-gradient(180deg, rgba(255, 228, 168, 0.18), rgba(255, 228, 168, 0.08));
+  color: #fff0bf;
+}
+
 .create-center-status-banner {
   margin-top: 0;
+}
+
+.create-center-loading {
+  padding-block: 22px;
 }
 
 .create-center-shell {
@@ -3134,10 +3144,17 @@ select:focus {
 }
 
 .step-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 13px 16px;
   border-radius: 16px;
   color: #5d7097;
   font-weight: 700;
+}
+
+.step-nav-item span:last-child {
+  min-width: 0;
 }
 
 .step-nav-item.active,
@@ -3173,6 +3190,13 @@ select:focus {
   grid-template-columns: 1.2fr 0.8fr;
 }
 
+.story-foundation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin: 20px 0;
+}
+
 .panel-card {
   padding: 22px;
 }
@@ -3190,6 +3214,10 @@ select:focus {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.relationship-list {
+  margin-top: 14px;
 }
 
 .overview-item {
@@ -3416,7 +3444,8 @@ select:focus {
   .hero-layout,
   .workspace-shell,
   .editor-grid,
-  .step-two-layout {
+  .step-two-layout,
+  .story-foundation-grid {
     grid-template-columns: 1fr;
   }
 

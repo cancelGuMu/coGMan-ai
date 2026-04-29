@@ -171,10 +171,26 @@ export function getWorkflowStepDetail(stepId: StepId) {
 export function defaultStepOneData(projectName = ""): StepOneData {
   return {
     project_name: projectName,
+    genre: "",
+    target_audience: "",
+    target_platform: "",
     core_story_idea: "",
+    core_story_title: "",
+    world_background: "",
+    era_setting: "",
+    rule_system: "",
+    conflict_environment: "",
+    protagonist_goal: "",
+    antagonist_pressure: "",
+    core_conflict: "",
+    character_growth: "",
+    relationship_notes: "",
+    relationships: [],
+    season_outline: "",
     season_episode_count: "12集",
     custom_episode_count: null,
     imported_story_name: null,
+    import_parse_status: "未导入",
     linked_project: false,
     episodes: Array.from({ length: 12 }, (_, index) => ({
       episode_number: index + 1,
@@ -223,6 +239,7 @@ export function mergeProjectDefaults(project: ProjectRecord): ProjectRecord {
     step_one: {
       ...stepOneDefaults,
       ...project.step_one,
+      relationships: project.step_one.relationships ?? stepOneDefaults.relationships,
       episodes: project.step_one.episodes.length ? project.step_one.episodes : stepOneDefaults.episodes,
     },
     step_two: {

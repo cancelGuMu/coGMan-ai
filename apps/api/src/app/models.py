@@ -28,12 +28,36 @@ class EpisodeDraft(BaseModel):
     hook: str = ""
 
 
+class StoryRelationship(BaseModel):
+    id: str = ""
+    character_a: str = ""
+    character_b: str = ""
+    relationship: str = ""
+    conflict: str = ""
+
+
 class StepOneData(BaseModel):
     project_name: str = ""
+    genre: str = ""
+    target_audience: str = ""
+    target_platform: str = ""
     core_story_idea: str = ""
+    core_story_title: str = ""
+    world_background: str = ""
+    era_setting: str = ""
+    rule_system: str = ""
+    conflict_environment: str = ""
+    protagonist_goal: str = ""
+    antagonist_pressure: str = ""
+    core_conflict: str = ""
+    character_growth: str = ""
+    relationship_notes: str = ""
+    relationships: list[StoryRelationship] = Field(default_factory=list)
+    season_outline: str = ""
     season_episode_count: str = "12集"
     custom_episode_count: int | None = None
     imported_story_name: str | None = None
+    import_parse_status: str = "未导入"
     linked_project: bool = False
     episodes: list[EpisodeDraft] = Field(default_factory=list)
 

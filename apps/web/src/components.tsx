@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import type { ChangeEvent, CSSProperties, ReactNode } from "react";
+import type { StepCompletionStatus } from "./types";
 import "./components.css";
 
 export type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
@@ -105,6 +106,168 @@ export function SectionHeader({
         {description ? <p>{description}</p> : null}
       </div>
       {actions ? <div className="section-header-actions">{actions}</div> : null}
+    </div>
+  );
+}
+
+export function DualColumnLayout({
+  primary,
+  secondary,
+  className = "",
+}: {
+  primary: ReactNode;
+  secondary: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`dual-column-layout ${className}`.trim()}>
+      <div className="dual-column-primary">{primary}</div>
+      <div className="dual-column-secondary">{secondary}</div>
+    </div>
+  );
+}
+
+export function ThreeColumnWorkbench({
+  left,
+  center,
+  right,
+  className = "",
+}: {
+  left: ReactNode;
+  center: ReactNode;
+  right: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`three-column-workbench ${className}`.trim()}>
+      <aside className="workbench-rail">{left}</aside>
+      <section className="workbench-stage">{center}</section>
+      <aside className="workbench-detail">{right}</aside>
+    </div>
+  );
+}
+
+export type VersionRecord = {
+  id: string;
+  title: string;
+  description: string;
+  created_at: string;
+};
+
+export function VersionHistoryPanel({
+  versions,
+  onRestore,
+}: {
+  versions: VersionRecord[];
+  onRestore?: (version: VersionRecord) => void;
+}) {
+  return (
+    <div className="version-history-panel">
+      <div className="version-history-head">
+        <strong>版本记录</strong>
+        <span>{versions.length} 条</span>
+      </div>
+      {versions.length ? (
+        <div className="version-history-list">
+          {versions.map((version) => (
+            <article className="version-history-item" key={version.id}>
+              <div>
+                <strong>{version.title}</strong>
+                <p>{version.description}</p>
+                <time>{version.created_at}</time>
+              </div>
+              {onRestore ? (
+                <button className="ghost-mini-button" type="button" onClick={() => onRestore(version)}>
+                  恢复
+                </button>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      ) : (
+        <EmptyStatePanel title="暂无版本记录" description="保存或生成后，这里会记录关键版本快照。" />
+      )}
+    </div>
+  );
+}
+
+export function AIGenerationButtonGroup({
+  onGenerate,
+  onRegenerate,
+  onStop,
+  onCopyPrompt,
+  disabled = false,
+}: {
+  onGenerate: () => void;
+  onRegenerate?: () => void;
+  onStop?: () => void;
+  onCopyPrompt?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="ai-generation-button-group">
+      <button className="primary-pill inline-pill" type="button" onClick={onGenerate} disabled={disabled}>
+        生成
+      </button>
+      <button className="ghost-button inline-button" type="button" onClick={onRegenerate ?? onGenerate} disabled={disabled}>
+        重新生成
+      </button>
+      <button className="ghost-button inline-button" type="button" onClick={onStop} disabled={!onStop || disabled}>
+        停止
+      </button>
+      <button className="ghost-button inline-button" type="button" onClick={onCopyPrompt} disabled={!onCopyPrompt}>
+        复制提示词
+      </button>
+    </div>
+  );
+}
+
+export function ImportFileButton({
+  label = "导入文件",
+  filename,
+  accept = ".txt,.md,.docx",
+  onChange,
+}: {
+  label?: string;
+  filename?: string | null;
+  accept?: string;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <label className="ghost-button inline-button import-file-button">
+      {label}
+      <input type="file" accept={accept} onChange={onChange} hidden />
+      {filename ? <span>{filename}</span> : null}
+    </label>
+  );
+}
+
+export function NextStepButton({
+  disabled,
+  onClick,
+  children = "进入下一步",
+}: {
+  disabled?: boolean;
+  onClick: () => void;
+  children?: ReactNode;
+}) {
+  return (
+    <button className={`next-step-button${disabled ? " is-disabled" : ""}`} type="button" onClick={onClick} disabled={disabled}>
+      {children}
+    </button>
+  );
+}
+
+export function StepStatusDot({ status }: { status: StepCompletionStatus }) {
+  return <span className={`step-status-dot step-status-dot-${status}`} aria-label={`步骤状态：${status}`} />;
+}
+
+export function LoadingSkeleton({ rows = 4 }: { rows?: number }) {
+  return (
+    <div className="loading-skeleton" aria-label="内容加载中">
+      {Array.from({ length: rows }, (_, index) => (
+        <span key={index} style={{ "--row-index": index } as CSSProperties} />
+      ))}
     </div>
   );
 }
