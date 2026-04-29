@@ -1,4 +1,4 @@
-import type { EpisodeDraft, StepTwoData } from "./types";
+import type { EpisodeDraft, StepTwoData, StoryRelationship } from "./types";
 
 export const MAX_IMPORT_FILE_BYTES = 8 * 1024 * 1024;
 export const MAX_GENERATION_CHUNK_CHARS = 4_000;
@@ -47,6 +47,12 @@ export type ParsedSeasonOutline = {
   formatted: boolean;
 };
 
+export type ParsedFoundationResult = {
+  fields: Record<string, string>;
+  relationships: StoryRelationship[];
+  formatted: boolean;
+};
+
 type RawEpisodeOutline = {
   episode_number?: unknown;
   episode?: unknown;
@@ -70,6 +76,17 @@ type RawSeasonOutline = {
 
 function asText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function asTextBlock(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
 }
 
 function asEpisodeNumber(value: unknown): number | null {
@@ -206,6 +223,71 @@ function parseJsonSeasonOutline(raw: string): ParsedSeasonOutline | null {
     season_outline: outlines.join("\n\n"),
     episodes: Array.from(episodesByNumber.values()).sort((a, b) => a.episode_number - b.episode_number),
     formatted: episodesByNumber.size > 0,
+  };
+}
+
+function parseJsonObjects(raw: string): Array<Record<string, unknown>> {
+  return collectJsonCandidates(raw).flatMap((candidate) => {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return [parsed as Record<string, unknown>];
+    } catch {
+      // Continue with the next candidate.
+    }
+    return [];
+  });
+}
+
+function asRelationship(value: unknown, index: number): StoryRelationship | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const item = value as Record<string, unknown>;
+  const characterA = asTextBlock(item.character_a);
+  const characterB = asTextBlock(item.character_b);
+  const relationship = asTextBlock(item.relationship);
+  const conflict = asTextBlock(item.conflict);
+  if (!characterA && !characterB && !relationship && !conflict) return null;
+  return {
+    id: `rel-ai-${Date.now()}-${index}`,
+    character_a: characterA || "待补充角色A",
+    character_b: characterB || "待补充角色B",
+    relationship,
+    conflict,
+  };
+}
+
+export function parseStepOneFoundationResult(raw: string): ParsedFoundationResult {
+  const fields: Record<string, string> = {};
+  const relationships: StoryRelationship[] = [];
+  const objects = parseJsonObjects(normalizeText(raw));
+
+  for (const item of objects) {
+    for (const key of [
+      "world_background",
+      "era_setting",
+      "rule_system",
+      "conflict_environment",
+      "protagonist_goal",
+      "antagonist_pressure",
+      "core_conflict",
+      "character_growth",
+      "relationship_notes",
+    ]) {
+      const value = asTextBlock(item[key]);
+      if (value) fields[key] = value;
+    }
+
+    if (Array.isArray(item.relationships)) {
+      item.relationships.forEach((relationship, index) => {
+        const parsed = asRelationship(relationship, index);
+        if (parsed) relationships.push(parsed);
+      });
+    }
+  }
+
+  return {
+    fields,
+    relationships,
+    formatted: Object.keys(fields).length > 0 || relationships.length > 0,
   };
 }
 

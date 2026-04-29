@@ -21,6 +21,7 @@ import {
   fetchVideoTaskStatus,
   generateImageCandidate,
   generateStepOneOutline,
+  generateStepOneTask,
   generateStepTwoContent,
   generateVideoCandidate,
   importTextFile,
@@ -39,7 +40,14 @@ import {
   updateProjectCover,
 } from "./api";
 import { defaultStepOneData, defaultStepTwoData, mergeProjectDefaults, workflowSteps } from "./data";
-import { assertImportableFile, buildStepOneChunks, buildStepTwoChunks, mergeChunkResults, parseSeasonOutlineResult } from "./payload";
+import {
+  assertImportableFile,
+  buildStepOneChunks,
+  buildStepTwoChunks,
+  mergeChunkResults,
+  parseSeasonOutlineResult,
+  parseStepOneFoundationResult,
+} from "./payload";
 import type {
   DashboardOverview,
   DashboardRange,
@@ -2388,6 +2396,7 @@ function StepOneSection({
   const [saving, setSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
+  const [foundationGenerating, setFoundationGenerating] = useState<"world" | "mainline" | "relationships" | null>(null);
 
   useEffect(() => {
     setForm(project.step_one);
@@ -2542,55 +2551,107 @@ function StepOneSection({
     }
   }
 
-  function generateWorldDraft() {
-    const seed = form.core_story_idea || form.genre || "当前故事";
-    updateForm({
-      ...form,
-      world_background: form.world_background || `围绕“${seed.slice(0, 42)}”建立一个规则清晰、冲突外显的故事世界。`,
-      era_setting: form.era_setting || "近未来都市与隐秘组织并存的架空时代",
-      rule_system: form.rule_system || "核心能力需要代价，资源稀缺，组织规则与个人选择持续冲突。",
-      conflict_environment: form.conflict_environment || "主角被迫在公众秩序、个人执念和隐藏真相之间做选择。",
-    });
-    setStatusMessage("已生成世界观草稿，可继续编辑。");
+  function buildFoundationPrompt(target: string) {
+    return [
+      `生成目标：${target}`,
+      `项目名称：${form.project_name || project.name}`,
+      `类型：${form.genre || "未填写"}`,
+      `目标受众：${form.target_audience || "未填写"}`,
+      `目标平台：${form.target_platform || "未填写"}`,
+      `核心故事标题：${form.core_story_title || "未填写"}`,
+      "核心故事原文：",
+      form.core_story_idea || "未填写",
+      "当前已填写字段：",
+      `世界背景：${form.world_background || "未填写"}`,
+      `时代设定：${form.era_setting || "未填写"}`,
+      `规则体系：${form.rule_system || "未填写"}`,
+      `冲突环境：${form.conflict_environment || "未填写"}`,
+      `主角目标：${form.protagonist_goal || "未填写"}`,
+      `反派阻力：${form.antagonist_pressure || "未填写"}`,
+      `核心矛盾：${form.core_conflict || "未填写"}`,
+      `成长线：${form.character_growth || "未填写"}`,
+      `人物关系：${form.relationship_notes || "未填写"}`,
+      "要求：只围绕核心故事原文生成，不要套用与原故事无关的近未来、隐秘组织、超能力、公众秩序等模板元素。",
+    ].join("\n");
   }
 
-  function generateMainlineDraft() {
-    updateForm({
-      ...form,
-      protagonist_goal: form.protagonist_goal || "主角需要找到真相并保护重要关系。",
-      antagonist_pressure: form.antagonist_pressure || "对立力量持续制造误导、资源封锁和关系离间。",
-      core_conflict: form.core_conflict || "个人选择与既定秩序之间的冲突贯穿全季。",
-      character_growth: form.character_growth || "主角从被动卷入成长为主动承担代价的行动者。",
-    });
-    setStatusMessage("已生成主线目标草稿。");
+  async function generateWorldDraft() {
+    if (foundationGenerating || aiGenerating) return;
+    setFoundationGenerating("world");
+    setStatusMessage("AI 正在生成世界观草稿...");
+    try {
+      const result = await generateStepOneTask(form.project_name || project.name, buildFoundationPrompt("世界观编辑"), "S01_WORLDVIEW");
+      const parsed = parseStepOneFoundationResult(result.content);
+      if (!parsed.formatted) {
+        setStatusMessage("AI 返回格式异常，未写入世界观字段，请重新生成。");
+        return;
+      }
+      setIsDirty(true);
+      setForm((current) => ({
+        ...current,
+        world_background: parsed.fields.world_background || current.world_background,
+        era_setting: parsed.fields.era_setting || current.era_setting,
+        rule_system: parsed.fields.rule_system || current.rule_system,
+        conflict_environment: parsed.fields.conflict_environment || current.conflict_environment,
+      }));
+      setStatusMessage("AI 已生成世界观草稿，可继续编辑。");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "世界观生成失败");
+    } finally {
+      setFoundationGenerating(null);
+    }
   }
 
-  function generateRelationshipDraft() {
-    updateForm({
-      ...form,
-      relationship_notes:
-        form.relationship_notes ||
-        "主角、同盟、对手和隐藏推动者之间形成多层关系：表面合作，暗线试探，关键节点反转。",
-      relationships: form.relationships.length
-        ? form.relationships
-        : [
-            {
-              id: `rel-${Date.now()}-a`,
-              character_a: "主角",
-              character_b: "同盟",
-              relationship: "互补搭档",
-              conflict: "目标一致但方法冲突",
-            },
-            {
-              id: `rel-${Date.now()}-b`,
-              character_a: "主角",
-              character_b: "反派",
-              relationship: "价值对立",
-              conflict: "围绕真相与秩序展开正面对抗",
-            },
-          ],
-    });
-    setStatusMessage("已生成人物关系草稿。");
+  async function generateMainlineDraft() {
+    if (foundationGenerating || aiGenerating) return;
+    setFoundationGenerating("mainline");
+    setStatusMessage("AI 正在生成主线目标草稿...");
+    try {
+      const result = await generateStepOneTask(form.project_name || project.name, buildFoundationPrompt("主线目标"), "S01_MAIN_CONFLICT");
+      const parsed = parseStepOneFoundationResult(result.content);
+      if (!parsed.formatted) {
+        setStatusMessage("AI 返回格式异常，未写入主线字段，请重新生成。");
+        return;
+      }
+      setIsDirty(true);
+      setForm((current) => ({
+        ...current,
+        protagonist_goal: parsed.fields.protagonist_goal || current.protagonist_goal,
+        antagonist_pressure: parsed.fields.antagonist_pressure || current.antagonist_pressure,
+        core_conflict: parsed.fields.core_conflict || current.core_conflict,
+        character_growth: parsed.fields.character_growth || current.character_growth,
+      }));
+      setStatusMessage("AI 已生成主线目标草稿。");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "主线目标生成失败");
+    } finally {
+      setFoundationGenerating(null);
+    }
+  }
+
+  async function generateRelationshipDraft() {
+    if (foundationGenerating || aiGenerating) return;
+    setFoundationGenerating("relationships");
+    setStatusMessage("AI 正在生成人物关系草稿...");
+    try {
+      const result = await generateStepOneTask(form.project_name || project.name, buildFoundationPrompt("人物关系"), "S01_RELATIONSHIPS");
+      const parsed = parseStepOneFoundationResult(result.content);
+      if (!parsed.formatted) {
+        setStatusMessage("AI 返回格式异常，未写入人物关系字段，请重新生成。");
+        return;
+      }
+      setIsDirty(true);
+      setForm((current) => ({
+        ...current,
+        relationship_notes: parsed.fields.relationship_notes || current.relationship_notes,
+        relationships: parsed.relationships.length ? parsed.relationships : current.relationships,
+      }));
+      setStatusMessage("AI 已生成人物关系草稿。");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "人物关系生成失败");
+    } finally {
+      setFoundationGenerating(null);
+    }
   }
 
   function generateContinuityReport() {
@@ -2746,9 +2807,14 @@ function StepOneSection({
       <div className="story-foundation-grid">
         <div className="panel-card">
           <h3>世界观编辑</h3>
-          <button className="ghost-button inline-button" type="button" onClick={generateWorldDraft}>
+          <AIActionButton
+            isGenerating={foundationGenerating === "world"}
+            disabled={Boolean(foundationGenerating) || aiGenerating}
+            loadingLabel="世界观生成中"
+            onClick={() => void generateWorldDraft()}
+          >
             生成世界观草稿
-          </button>
+          </AIActionButton>
           <label className="field-label">
             <span>世界背景</span>
             <textarea rows={4} value={form.world_background} onChange={(event) => updateForm({ ...form, world_background: event.target.value })} placeholder="描述故事发生的世界、地域、社会结构。" />
@@ -2769,9 +2835,14 @@ function StepOneSection({
 
         <div className="panel-card">
           <h3>主线目标</h3>
-          <button className="ghost-button inline-button" type="button" onClick={generateMainlineDraft}>
+          <AIActionButton
+            isGenerating={foundationGenerating === "mainline"}
+            disabled={Boolean(foundationGenerating) || aiGenerating}
+            loadingLabel="主线生成中"
+            onClick={() => void generateMainlineDraft()}
+          >
             生成主线目标
-          </button>
+          </AIActionButton>
           <label className="field-label">
             <span>主角目标</span>
             <textarea rows={3} value={form.protagonist_goal} onChange={(event) => updateForm({ ...form, protagonist_goal: event.target.value })} placeholder="主角想得到什么、守护什么或改变什么。" />
@@ -2792,9 +2863,14 @@ function StepOneSection({
 
         <div className="panel-card">
           <h3>人物关系</h3>
-          <button className="ghost-button inline-button" type="button" onClick={generateRelationshipDraft}>
+          <AIActionButton
+            isGenerating={foundationGenerating === "relationships"}
+            disabled={Boolean(foundationGenerating) || aiGenerating}
+            loadingLabel="关系生成中"
+            onClick={() => void generateRelationshipDraft()}
+          >
             生成人物关系
-          </button>
+          </AIActionButton>
           <label className="field-label">
             <span>关系说明</span>
             <textarea rows={5} value={form.relationship_notes} onChange={(event) => updateForm({ ...form, relationship_notes: event.target.value })} placeholder="用自然语言描述主要人物、阵营和关系张力。" />

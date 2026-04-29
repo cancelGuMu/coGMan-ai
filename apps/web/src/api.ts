@@ -180,6 +180,13 @@ export async function generateStepOneOutline(projectName: string, prompt: string
   });
 }
 
+export async function generateStepOneTask(projectName: string, prompt: string, taskId: string): Promise<GeneratedTextResponse> {
+  return request<GeneratedTextResponse>("/api/generate/step-one-season-outline", {
+    method: "POST",
+    body: JSON.stringify({ project_name: projectName, prompt, mode: "foundation", task_id: taskId }),
+  });
+}
+
 export async function generateStepTwoContent(
   projectName: string,
   prompt: string,

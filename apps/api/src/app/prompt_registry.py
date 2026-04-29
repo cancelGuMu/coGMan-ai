@@ -63,8 +63,17 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         step_id="story-structure",
         model_role="text_planner",
         system_prompt=TEXT_MODEL_SYSTEM,
-        user_instruction="建立可持续连载的世界观、时代背景、规则系统、冲突环境和视觉关键词。",
-        output_contract="输出世界背景、时代设定、至少 5 条规则、冲突环境、视觉关键词。",
+        user_instruction=(
+            "只根据用户原始故事、类型、受众和平台建立世界观。"
+            "必须保留用户提供的专有名词、角色关系、时代线索和核心矛盾，不得套用通用近未来/组织/能力模板。"
+        ),
+        output_contract=(
+            "只返回合法 JSON：{\"world_background\":\"贴合原始故事的世界背景\","
+            "\"era_setting\":\"时代设定\","
+            "\"rule_system\":\"至少 5 条世界运行规则，合并为可编辑文本\","
+            "\"conflict_environment\":\"外部压力与冲突环境\"}。"
+            "禁止输出寒暄、章节摘抄、Markdown 标题、任务说明或未映射字段。"
+        ),
         required_inputs=("project_name", "prompt"),
     ),
     "S01_MAIN_CONFLICT": PromptTask(
@@ -72,8 +81,17 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         step_id="story-structure",
         model_role="text_planner",
         system_prompt=TEXT_MODEL_SYSTEM,
-        user_instruction="生成主角目标、反派阻力、核心矛盾、角色成长线和可拆成多集推进的冲突层级。",
-        output_contract="输出 protagonist_goal、antagonist_pressure、core_conflict、character_growth、stakes、season_progression。",
+        user_instruction=(
+            "从用户原始故事中提炼主角目标、对立压力、核心矛盾和成长线。"
+            "必须指向故事中的具体人物、关系、秘密、欲望或事件，不得使用泛化模板句。"
+        ),
+        output_contract=(
+            "只返回合法 JSON：{\"protagonist_goal\":\"主角具体目标\","
+            "\"antagonist_pressure\":\"反派或对立力量如何施压\","
+            "\"core_conflict\":\"贯穿全季的核心矛盾\","
+            "\"character_growth\":\"主角成长线\"}。"
+            "禁止输出寒暄、前置说明、Markdown 标题、任务说明或未映射字段。"
+        ),
         required_inputs=("project_name", "prompt"),
     ),
     "S01_RELATIONSHIPS": PromptTask(
@@ -81,8 +99,18 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         step_id="story-structure",
         model_role="text_planner",
         system_prompt=TEXT_MODEL_SYSTEM,
-        user_instruction="生成主要人物关系表，每组关系必须包含情感关系、利益冲突和剧情用途。",
-        output_contract="输出 character_a、character_b、relationship、conflict、emotional_direction、plot_function、first_turning_point。",
+        user_instruction=(
+            "从用户原始故事中抽取主要人物、阵营和隐性推动者关系。"
+            "必须优先使用原文角色名；若原文未给出姓名，使用可解释的角色称谓，不得只输出主角/同盟/反派占位。"
+        ),
+        output_contract=(
+            "只返回合法 JSON：{\"relationship_notes\":\"人物关系总述\","
+            "\"relationships\":[{\"character_a\":\"角色A\","
+            "\"character_b\":\"角色B\","
+            "\"relationship\":\"情感关系、利益关系或阵营关系\","
+            "\"conflict\":\"关系张力、误会、秘密、利益冲突或反转点\"}]}。"
+            "至少输出 2 组关系；禁止输出寒暄、前置说明、Markdown 标题、任务说明或未映射字段。"
+        ),
         required_inputs=("project_name", "prompt"),
     ),
     "S01_SEASON_OUTLINE": PromptTask(
@@ -429,6 +457,19 @@ def build_text_messages(project_name: str, prompt: str, mode: str, task_id: str 
 {prompt or '请基于当前项目上下文生成内容。'}
 
 请输出可直接写入 coMGan-ai 工作台字段的内容。若信息不足，请先列出缺失项、合理假设和待确认点。"""
+    if "只返回合法 JSON" in task.output_contract or "只返回一个合法 JSON" in task.output_contract:
+        user_prompt = f"""项目名称：{project_name or '未命名项目'}
+当前步骤：{task.step_id}
+任务编号：{task.task_id}
+模型角色：{task.model_role}
+任务说明：{task.user_instruction}
+输出契约：{task.output_contract}
+任务模式：{mode or 'generic'}
+
+用户输入：
+{prompt or '请基于当前项目上下文生成内容。'}
+
+请只输出满足契约的 JSON 对象，不要输出缺失项列表、解释、寒暄或 Markdown。若信息不足，请在对应 JSON 字段内基于已有输入做保守补全。"""
     return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
