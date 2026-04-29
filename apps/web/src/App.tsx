@@ -2679,33 +2679,12 @@ function StepOneSection({
         <div>
           <span className="eyebrow">步骤一</span>
           <h2>故事架构</h2>
-          <p>支持从未关联项目状态开始填写，保存后自动创建项目并完成关联，同时回显故事骨架与季纲内容。</p>
         </div>
         <div className="chip-row">
           <span className="ghost-chip">项目关联：{form.linked_project ? "已关联" : "未关联"}</span>
           <span className="ghost-chip">总集数：{stats.total}</span>
           <span className="ghost-chip">内容完成：{stats.contentDone}</span>
           <span className="ghost-chip">钩子完成：{stats.hookDone}</span>
-        </div>
-      </div>
-
-      <div className="story-foundation-grid">
-        <div className="panel-card">
-          <h3>项目基础信息</h3>
-          <div className="field-row compact-row">
-            <label className="field-label">
-              <span>题材类型</span>
-              <input value={form.genre} onChange={(event) => updateForm({ ...form, genre: event.target.value })} placeholder="例如：都市异能、古风武侠" />
-            </label>
-            <label className="field-label">
-              <span>目标受众</span>
-              <input value={form.target_audience} onChange={(event) => updateForm({ ...form, target_audience: event.target.value })} placeholder="例如：18-30 岁短剧用户" />
-            </label>
-            <label className="field-label">
-              <span>目标平台</span>
-              <input value={form.target_platform} onChange={(event) => updateForm({ ...form, target_platform: event.target.value })} placeholder="例如：抖音 / 快手 / B站" />
-            </label>
-          </div>
         </div>
       </div>
 
