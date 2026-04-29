@@ -10,7 +10,11 @@ from .models import (
     EpisodeDraft,
     ProjectRecord,
     ProjectSummary,
+    SaveStepFiveRequest,
+    SaveStepFourRequest,
+    SaveStepSixRequest,
     SaveStepOneRequest,
+    SaveStepThreeRequest,
     SaveStepTwoRequest,
     StepOneData,
 )
@@ -199,6 +203,52 @@ def save_step_two(project_id: str, payload: SaveStepTwoRequest) -> ProjectRecord
                         "modification_records": modification_records,
                     }
                 ),
+            }
+        )
+        records[index] = updated
+        target = updated
+        break
+    if target is not None:
+        _write_records(records)
+    return target
+
+
+def save_step_three(project_id: str, payload: SaveStepThreeRequest) -> ProjectRecord | None:
+    return _save_step_data(project_id, "step_three", payload.data, "待分镜规划", 78, "storyboard-planning")
+
+
+def save_step_four(project_id: str, payload: SaveStepFourRequest) -> ProjectRecord | None:
+    return _save_step_data(project_id, "step_four", payload.data, "待提词生成", 82, "prompt-generation")
+
+
+def save_step_five(project_id: str, payload: SaveStepFiveRequest) -> ProjectRecord | None:
+    return _save_step_data(project_id, "step_five", payload.data, "待画面生成", 86, "image-generation")
+
+
+def save_step_six(project_id: str, payload: SaveStepSixRequest) -> ProjectRecord | None:
+    return _save_step_data(project_id, "step_six", payload.data, "画面生成中", 90, "image-generation")
+
+
+def _save_step_data(
+    project_id: str,
+    field_name: str,
+    data: object,
+    status: str,
+    progress: int,
+    current_step: str,
+) -> ProjectRecord | None:
+    records = _read_records()
+    target: ProjectRecord | None = None
+    for index, record in enumerate(records):
+        if record.id != project_id:
+            continue
+        updated = record.model_copy(
+            update={
+                field_name: data,
+                "status": status,
+                "progress": progress,
+                "updated_at": datetime.now(),
+                "current_step": current_step,
             }
         )
         records[index] = updated

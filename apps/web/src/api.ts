@@ -10,7 +10,11 @@ import type {
   GeneratedTextResponse,
   ProjectRecord,
   ProjectSummary,
+  StepFiveData,
+  StepFourData,
+  StepSixData,
   StepOneData,
+  StepThreeData,
   StepTwoData,
 } from "./types";
 import { MAX_IMPORT_FILE_BYTES, assertImportableFile } from "./payload";
@@ -84,6 +88,38 @@ export async function saveStepOne(projectId: string, data: StepOneData): Promise
 
 export async function saveStepTwo(projectId: string, data: StepTwoData): Promise<ProjectRecord> {
   const response = await request<{ project: ProjectRecord }>(`/api/projects/${projectId}/step-two`, {
+    method: "PUT",
+    body: JSON.stringify({ data }),
+  });
+  return response.project;
+}
+
+export async function saveStepThree(projectId: string, data: StepThreeData): Promise<ProjectRecord> {
+  const response = await request<{ project: ProjectRecord }>(`/api/projects/${projectId}/step-three`, {
+    method: "PUT",
+    body: JSON.stringify({ data }),
+  });
+  return response.project;
+}
+
+export async function saveStepFour(projectId: string, data: StepFourData): Promise<ProjectRecord> {
+  const response = await request<{ project: ProjectRecord }>(`/api/projects/${projectId}/step-four`, {
+    method: "PUT",
+    body: JSON.stringify({ data }),
+  });
+  return response.project;
+}
+
+export async function saveStepFive(projectId: string, data: StepFiveData): Promise<ProjectRecord> {
+  const response = await request<{ project: ProjectRecord }>(`/api/projects/${projectId}/step-five`, {
+    method: "PUT",
+    body: JSON.stringify({ data }),
+  });
+  return response.project;
+}
+
+export async function saveStepSix(projectId: string, data: StepSixData): Promise<ProjectRecord> {
+  const response = await request<{ project: ProjectRecord }>(`/api/projects/${projectId}/step-six`, {
     method: "PUT",
     body: JSON.stringify({ data }),
   });

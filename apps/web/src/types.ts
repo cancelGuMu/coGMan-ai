@@ -130,8 +130,11 @@ export type AssetCharacter = {
   id: string;
   name: string;
   role: string;
+  age: string;
+  personality: string;
   appearance: string;
   motivation: string;
+  outfit: string;
 };
 
 export type AssetScene = {
@@ -149,13 +152,87 @@ export type AssetProp = {
   story_function: string;
 };
 
+export type AssetCandidate = {
+  id: string;
+  category: "character" | "scene" | "prop";
+  name: string;
+  description: string;
+  selected: boolean;
+};
+
 export type StepThreeData = {
+  candidates: AssetCandidate[];
   characters: AssetCharacter[];
   scenes: AssetScene[];
   props: AssetProp[];
   style_board: string;
   reference_notes: string;
+  prompt_templates: string;
   consistency_rules: string;
+};
+
+export type ShotItem = {
+  id: string;
+  episode_number: number;
+  shot_number: number;
+  scene: string;
+  characters: string[];
+  props: string[];
+  purpose: string;
+  duration_seconds: number;
+  shot_size: string;
+  camera_angle: string;
+  composition: string;
+  movement: string;
+  dialogue: string;
+  rhythm: string;
+  status: "draft" | "ready" | "queued";
+};
+
+export type StepFourData = {
+  selected_episode_number: number;
+  shots: ShotItem[];
+  task_preview: string;
+  total_duration_seconds: number;
+};
+
+export type PromptItem = {
+  id: string;
+  shot_id: string;
+  shot_label: string;
+  selected: boolean;
+  t2i_prompt: string;
+  i2v_prompt: string;
+  negative_prompt: string;
+  parameters: string;
+  locked_terms: string;
+  version: string;
+};
+
+export type StepFiveData = {
+  selected_episode_number: number;
+  filter_text: string;
+  prompts: PromptItem[];
+  negative_template: string;
+  parameter_template: string;
+  batch_replace_from: string;
+  batch_replace_to: string;
+};
+
+export type ImageCandidate = {
+  id: string;
+  shot_id: string;
+  shot_label: string;
+  url: string;
+  prompt: string;
+  status: "candidate" | "keyframe" | "first-frame" | "discarded";
+  metadata: string;
+};
+
+export type StepSixData = {
+  selected_shot_id: string;
+  generation_filter: string;
+  candidates: ImageCandidate[];
 };
 
 export type ProjectSummary = {
@@ -181,6 +258,9 @@ export type ProjectRecord = {
   step_one: StepOneData;
   step_two: StepTwoData;
   step_three: StepThreeData;
+  step_four: StepFourData;
+  step_five: StepFiveData;
+  step_six: StepSixData;
 };
 
 export type GeneratedTextResponse = {

@@ -21,7 +21,11 @@ import {
   generateStepTwoContent,
   importTextFile,
   renameProject,
+  saveStepFive,
+  saveStepFour,
   saveStepOne,
+  saveStepSix,
+  saveStepThree,
   saveStepTwo,
   updateProjectCover,
 } from "./api";
@@ -35,7 +39,11 @@ import type {
   ProjectSummary,
   ScriptRhythmNode,
   StepCompletionStatus,
+  StepFiveData,
+  StepFourData,
+  StepSixData,
   StepOneData,
+  StepThreeData,
   StepTwoData,
 } from "./types";
 
@@ -2152,9 +2160,41 @@ function CreativeWorkspaceContent({
           />
         ) : null}
 
-        {activeStep.id === "asset-setting" ? <StepThreeSection project={project} /> : null}
+        {activeStep.id === "asset-setting" ? (
+          <StepThreeSection
+            project={project}
+            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={setStatusMessage}
+          />
+        ) : null}
+        {activeStep.id === "storyboard-planning" ? (
+          <StepFourSection
+            project={project}
+            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={setStatusMessage}
+          />
+        ) : null}
+        {activeStep.id === "prompt-generation" ? (
+          <StepFiveSection
+            project={project}
+            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={setStatusMessage}
+          />
+        ) : null}
+        {activeStep.id === "image-generation" ? (
+          <StepSixSection
+            project={project}
+            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={setStatusMessage}
+          />
+        ) : null}
 
-        {activeStep.id !== "story-structure" && activeStep.id !== "script-creation" && activeStep.id !== "asset-setting" ? (
+        {activeStep.id !== "story-structure" &&
+        activeStep.id !== "script-creation" &&
+        activeStep.id !== "asset-setting" &&
+        activeStep.id !== "storyboard-planning" &&
+        activeStep.id !== "prompt-generation" &&
+        activeStep.id !== "image-generation" ? (
           <article className="placeholder-card single-step-page" id={activeStep.id}>
             <div className="placeholder-badge">{activeStep.label}</div>
             <h3>{activeStep.label.replace(/^\d+\s*/, "")}</h3>
@@ -3390,8 +3430,119 @@ function StepTwoSection({
   );
 }
 
-function StepThreeSection({ project }: { project: ProjectRecord }) {
-  const assetLibrary = project.step_three;
+function StepThreeSection({
+  project,
+  onSaved,
+  setStatusMessage,
+}: {
+  project: ProjectRecord;
+  onSaved?: (project: ProjectRecord, message: string) => void;
+  setStatusMessage?: (message: string) => void;
+}) {
+  const [assetLibrary, setAssetLibrary] = useState<StepThreeData>(project.step_three);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setAssetLibrary(project.step_three);
+  }, [project.step_three]);
+
+  function extractAssetCandidates() {
+    const scriptText = project.step_two.script_text || project.step_two.novel_text || "主角在核心场景中推动剧情。";
+    setAssetLibrary((current) => ({
+      ...current,
+      candidates: [
+        { id: `cand-char-${Date.now()}`, category: "character", name: "主角", description: scriptText.slice(0, 60), selected: true },
+        { id: `cand-scene-${Date.now()}`, category: "scene", name: "核心场景", description: "从剧本文本中提取的主要发生地点。", selected: true },
+        { id: `cand-prop-${Date.now()}`, category: "prop", name: "关键道具", description: "推动剧情反转的物件。", selected: false },
+      ],
+    }));
+  }
+
+  function addSelectedCandidates() {
+    setAssetLibrary((current) => ({
+      ...current,
+      characters: [
+        ...current.characters,
+        ...current.candidates
+          .filter((item) => item.selected && item.category === "character")
+          .map((item) => ({
+            id: `char-${item.id}`,
+            name: item.name,
+            role: "主要角色",
+            age: "",
+            personality: "目标明确，行动果决",
+            appearance: "",
+            motivation: item.description,
+            outfit: "",
+          })),
+      ],
+      scenes: [
+        ...current.scenes,
+        ...current.candidates
+          .filter((item) => item.selected && item.category === "scene")
+          .map((item) => ({
+            id: `scene-${item.id}`,
+            name: item.name,
+            location: item.name,
+            atmosphere: item.description,
+            episodes: String(project.step_two.selected_episode_number || 1),
+          })),
+      ],
+      props: [
+        ...current.props,
+        ...current.candidates
+          .filter((item) => item.selected && item.category === "prop")
+          .map((item) => ({
+            id: `prop-${item.id}`,
+            name: item.name,
+            type: "剧情道具",
+            story_function: item.description,
+          })),
+      ],
+    }));
+  }
+
+  function addCharacter() {
+    setAssetLibrary((current) => ({
+      ...current,
+      characters: [
+        ...current.characters,
+        {
+          id: `char-${Date.now()}`,
+          name: `角色 ${current.characters.length + 1}`,
+          role: "待设定",
+          age: "",
+          personality: "",
+          appearance: "",
+          motivation: "",
+          outfit: "",
+        },
+      ],
+    }));
+  }
+
+  function removeCharacter(characterId: string) {
+    const target = assetLibrary.characters.find((item) => item.id === characterId);
+    const confirmed = window.confirm(`确认删除角色“${target?.name || "未命名角色"}”吗？删除后会影响后续分镜和提示词引用。`);
+    if (!confirmed) return;
+    setAssetLibrary((current) => ({
+      ...current,
+      characters: current.characters.filter((item) => item.id !== characterId),
+    }));
+    setStatusMessage?.("角色已删除，保存资产后生效");
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const saved = await saveStepThree(project.id, assetLibrary);
+      onSaved?.(saved, "步骤三资产设定已保存");
+      setStatusMessage?.("步骤三资产设定已保存");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const summaryCards = [
     { label: "角色", value: assetLibrary.characters.length, hint: "角色卡、外貌、动机" },
     { label: "场景", value: assetLibrary.scenes.length, hint: "地点、氛围、出现集数" },
@@ -3425,19 +3576,65 @@ function StepThreeSection({ project }: { project: ProjectRecord }) {
                 <em>{card.hint}</em>
               </div>
             ))}
+            <div className="action-row">
+              <button className="ghost-button inline-button" type="button" onClick={extractAssetCandidates}>
+                提取资产
+              </button>
+              <button className="ghost-button inline-button" type="button" onClick={addSelectedCandidates}>
+                加入资产库
+              </button>
+              <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>
+                {saving ? "保存中..." : "保存资产"}
+              </button>
+            </div>
           </div>
         }
         center={
           <div className="panel-card">
-            <h3>待提取资产候选</h3>
+            <div className="rewrite-head">
+              <h3>待提取资产候选</h3>
+              <button className="ghost-button inline-button" type="button" onClick={addCharacter}>
+                新增角色
+              </button>
+            </div>
             <p className="asset-empty-copy">
               当前步骤三已经具备页面骨架和数据入口。下一批任务将从剧本文本中提取角色、场景、道具候选，并允许勾选加入资产库。
             </p>
             <div className="asset-placeholder-grid">
-              {["角色候选", "场景候选", "道具候选", "风格板"].map((item) => (
+              {assetLibrary.candidates.length ? assetLibrary.candidates.map((item) => (
+                <div className="overview-item" key={item.id}>
+                  <strong>{item.name} · {item.category}</strong>
+                  <span>{item.description}</span>
+                  <button
+                    className="ghost-mini-button"
+                    type="button"
+                    onClick={() =>
+                      setAssetLibrary((current) => ({
+                        ...current,
+                        candidates: current.candidates.map((candidate) =>
+                          candidate.id === item.id ? { ...candidate, selected: !candidate.selected } : candidate
+                        ),
+                      }))
+                    }
+                  >
+                    {item.selected ? "已勾选" : "未勾选"}
+                  </button>
+                </div>
+              )) : ["角色候选", "场景候选", "道具候选", "风格板"].map((item) => (
                 <div className="overview-item" key={item}>
                   <strong>{item}</strong>
                   <span>等待从剧本和故事架构中提取。</span>
+                </div>
+              ))}
+            </div>
+            <div className="overview-list relationship-list">
+              {assetLibrary.characters.map((item) => (
+                <div className="overview-item" key={item.id}>
+                  <strong>{item.name} · {item.role}</strong>
+                  <span>{item.personality || "待补充性格"} / {item.motivation || "待补充动机"}</span>
+                  <button className="ghost-mini-button" type="button" onClick={() => removeCharacter(item.id)}>
+                    删除角色
+                  </button>
                 </div>
               ))}
             </div>
@@ -3448,15 +3645,337 @@ function StepThreeSection({ project }: { project: ProjectRecord }) {
             <h3>风格与一致性</h3>
             <label className="field-label">
               <span>风格板</span>
-              <textarea value={assetLibrary.style_board} readOnly placeholder="后续用于记录画风、色彩、光影、镜头质感。" />
+              <textarea value={assetLibrary.style_board} onChange={(event) => setAssetLibrary({ ...assetLibrary, style_board: event.target.value })} placeholder="记录画风、色彩、光影、镜头质感。" />
             </label>
             <label className="field-label">
               <span>一致性规则</span>
-              <textarea value={assetLibrary.consistency_rules} readOnly placeholder="后续用于记录角色、服装、场景等锁定规则。" />
+              <textarea value={assetLibrary.consistency_rules} onChange={(event) => setAssetLibrary({ ...assetLibrary, consistency_rules: event.target.value })} placeholder="记录角色、服装、场景等锁定规则。" />
+            </label>
+            <label className="field-label">
+              <span>提示词模板</span>
+              <textarea value={assetLibrary.prompt_templates} onChange={(event) => setAssetLibrary({ ...assetLibrary, prompt_templates: event.target.value })} placeholder="角色、场景、道具提示词模板。" />
             </label>
           </div>
         }
       />
+    </section>
+  );
+}
+
+function StepFourSection({
+  project,
+  onSaved,
+  setStatusMessage,
+}: {
+  project: ProjectRecord;
+  onSaved: (project: ProjectRecord, message: string) => void;
+  setStatusMessage: (message: string) => void;
+}) {
+  const [form, setForm] = useState<StepFourData>(project.step_four);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => setForm(project.step_four), [project.step_four]);
+
+  function generateShots() {
+    const episode = project.step_one.episodes.find((item) => item.episode_number === form.selected_episode_number) ?? project.step_one.episodes[0];
+    const scenes = project.step_three.scenes.length ? project.step_three.scenes : [{ name: "核心场景" }];
+    const characters = project.step_three.characters.map((item) => item.name).filter(Boolean);
+    const shots = Array.from({ length: 6 }, (_, index) => ({
+      id: `shot-${Date.now()}-${index}`,
+      episode_number: episode?.episode_number ?? 1,
+      shot_number: index + 1,
+      scene: scenes[index % scenes.length]?.name ?? "核心场景",
+      characters: characters.length ? characters.slice(0, 2) : ["主角"],
+      props: project.step_three.props.slice(0, 2).map((item) => item.name),
+      purpose: index === 0 ? "开场建立情境" : index === 5 ? "结尾钩子" : "推进冲突",
+      duration_seconds: 5 + index,
+      shot_size: ["远景", "中景", "近景", "特写"][index % 4],
+      camera_angle: ["平视", "俯视", "仰视", "过肩"][index % 4],
+      composition: "主体居中，保留动作方向和情绪空间。",
+      movement: ["定镜", "推进", "横移", "跟拍"][index % 4],
+      dialogue: episode?.content.slice(0, 60) ?? "",
+      rhythm: index % 2 ? "情绪升级" : "信息铺垫",
+      status: "ready" as const,
+    }));
+    setForm({
+      ...form,
+      shots,
+      task_preview: `已生成 ${shots.length} 个镜头任务，可进入提词生成。`,
+      total_duration_seconds: shots.reduce((sum, item) => sum + item.duration_seconds, 0),
+    });
+  }
+
+  function addShot() {
+    setForm((current) => ({
+      ...current,
+      shots: [
+        ...current.shots,
+        {
+          id: `shot-${Date.now()}`,
+          episode_number: current.selected_episode_number,
+          shot_number: current.shots.length + 1,
+          scene: "新镜头场景",
+          characters: ["主角"],
+          props: [],
+          purpose: "补充镜头",
+          duration_seconds: 6,
+          shot_size: "中景",
+          camera_angle: "平视",
+          composition: "待补充构图站位",
+          movement: "定镜",
+          dialogue: "",
+          rhythm: "草稿",
+          status: "draft",
+        },
+      ],
+    }));
+  }
+
+  function removeShot(shotId: string) {
+    const target = form.shots.find((item) => item.id === shotId);
+    const confirmed = window.confirm(`确认删除镜头 #${target?.shot_number ?? "?"} 吗？删除后会重新整理镜头编号。`);
+    if (!confirmed) return;
+    setForm((current) => {
+      const shots = current.shots
+        .filter((item) => item.id !== shotId)
+        .map((item, index) => ({ ...item, shot_number: index + 1 }));
+      return {
+        ...current,
+        shots,
+        total_duration_seconds: shots.reduce((sum, item) => sum + item.duration_seconds, 0),
+      };
+    });
+    setStatusMessage("镜头已删除，保存分镜后生效");
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const nextForm = {
+        ...form,
+        total_duration_seconds: form.shots.reduce((sum, item) => sum + item.duration_seconds, 0),
+      };
+      const saved = await saveStepFour(project.id, nextForm);
+      onSaved(saved, "步骤四分镜规划已保存");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="editor-section" id="storyboard-planning">
+      <div className="section-headline">
+        <div>
+          <span className="eyebrow">步骤四</span>
+          <h2>分镜规划</h2>
+          <p>选择集数后可从故事、剧本和资产库模拟拆镜，形成镜头表和后续任务队列。</p>
+        </div>
+        <div className="chip-row">
+          <span className="ghost-chip">镜头 {form.shots.length}</span>
+          <span className="ghost-chip">总时长 {form.total_duration_seconds}s</span>
+        </div>
+      </div>
+      <div className="action-row">
+        <select value={form.selected_episode_number} onChange={(event) => setForm({ ...form, selected_episode_number: Number(event.target.value) })}>
+          {project.step_one.episodes.map((episode) => (
+            <option key={episode.episode_number} value={episode.episode_number}>第 {episode.episode_number} 集</option>
+          ))}
+        </select>
+        <button className="primary-pill inline-pill" type="button" onClick={generateShots}>自动拆镜</button>
+        <button className="ghost-button inline-button" type="button" onClick={addShot}>新增镜头</button>
+        <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存分镜"}</button>
+      </div>
+      <div className="shot-table-grid">
+        {form.shots.map((shot) => (
+          <article className="panel-card shot-card" key={shot.id}>
+            <strong>#{shot.shot_number} {shot.scene}</strong>
+            <span>{shot.shot_size} / {shot.camera_angle} / {shot.movement} / {shot.duration_seconds}s</span>
+            <p>{shot.purpose}</p>
+            <small>角色：{shot.characters.join("、") || "待选"} · 道具：{shot.props.join("、") || "无"}</small>
+            <button className="ghost-mini-button" type="button" onClick={() => removeShot(shot.id)}>
+              删除镜头
+            </button>
+          </article>
+        ))}
+      </div>
+      <div className="hint-text">{form.task_preview || "生成分镜后将显示后续图片/视频/配音任务队列。"}</div>
+    </section>
+  );
+}
+
+function StepFiveSection({
+  project,
+  onSaved,
+  setStatusMessage,
+}: {
+  project: ProjectRecord;
+  onSaved: (project: ProjectRecord, message: string) => void;
+  setStatusMessage: (message: string) => void;
+}) {
+  const [form, setForm] = useState<StepFiveData>(project.step_five);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setForm(project.step_five), [project.step_five]);
+
+  const visiblePrompts = form.prompts.filter((item) => !form.filter_text || item.shot_label.includes(form.filter_text));
+
+  function generatePrompts(scope: "single" | "batch", mode: "t2i" | "i2v") {
+    const shots = project.step_four.shots.length ? project.step_four.shots : [];
+    const targets = scope === "single" ? shots.slice(0, 1) : shots;
+    const prompts = targets.map((shot) => {
+      const base = `${shot.scene}，${shot.characters.join("、")}，${shot.shot_size}，${shot.camera_angle}，${shot.composition}`;
+      return {
+        id: `prompt-${shot.id}-${mode}-${Date.now()}`,
+        shot_id: shot.id,
+        shot_label: `第${shot.episode_number}集 #${shot.shot_number}`,
+        selected: true,
+        t2i_prompt: mode === "t2i" ? `${base}，高一致性漫画风关键帧` : "",
+        i2v_prompt: mode === "i2v" ? `${base}，${shot.movement}，动作自然连贯，时长 ${shot.duration_seconds}s` : "",
+        negative_prompt: form.negative_template,
+        parameters: form.parameter_template,
+        locked_terms: project.step_three.consistency_rules,
+        version: "v1",
+      };
+    });
+    setForm((current) => ({ ...current, prompts: [...current.prompts, ...prompts] }));
+  }
+
+  function batchReplace() {
+    if (!form.batch_replace_from) return;
+    setForm((current) => ({
+      ...current,
+      prompts: current.prompts.map((item) => ({
+        ...item,
+        t2i_prompt: item.t2i_prompt.split(current.batch_replace_from).join(current.batch_replace_to),
+        i2v_prompt: item.i2v_prompt.split(current.batch_replace_from).join(current.batch_replace_to),
+      })),
+    }));
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const saved = await saveStepFive(project.id, form);
+      onSaved(saved, "步骤五提词库已保存");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="editor-section" id="prompt-generation">
+      <div className="section-headline">
+        <div>
+          <span className="eyebrow">步骤五</span>
+          <h2>提词生成</h2>
+          <p>基于镜头表和资产库生成 T2I/I2V 提示词、负面词、参数与锁定词。</p>
+        </div>
+        <div className="chip-row"><span className="ghost-chip">提示词 {form.prompts.length}</span></div>
+      </div>
+      <div className="action-row">
+        <input value={form.filter_text} onChange={(event) => setForm({ ...form, filter_text: event.target.value })} placeholder="筛选镜头/场景/角色" />
+        <button className="primary-pill inline-pill" type="button" onClick={() => generatePrompts("batch", "t2i")}>批量 T2I</button>
+        <button className="ghost-button inline-button" type="button" onClick={() => generatePrompts("single", "t2i")}>单镜 T2I</button>
+        <button className="ghost-button inline-button" type="button" onClick={() => generatePrompts("batch", "i2v")}>批量 I2V</button>
+        <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存提词"}</button>
+      </div>
+      <div className="field-row compact-row">
+        <label className="field-label"><span>负面词模板</span><textarea value={form.negative_template} onChange={(event) => setForm({ ...form, negative_template: event.target.value })} /></label>
+        <label className="field-label"><span>参数模板</span><textarea value={form.parameter_template} onChange={(event) => setForm({ ...form, parameter_template: event.target.value })} /></label>
+      </div>
+      <div className="field-row compact-row">
+        <label className="field-label"><span>批量替换查找</span><input value={form.batch_replace_from} onChange={(event) => setForm({ ...form, batch_replace_from: event.target.value })} /></label>
+        <label className="field-label"><span>替换为</span><input value={form.batch_replace_to} onChange={(event) => setForm({ ...form, batch_replace_to: event.target.value })} /></label>
+        <button className="ghost-button inline-button" type="button" onClick={batchReplace}>执行替换</button>
+      </div>
+      <div className="prompt-list-grid">
+        {visiblePrompts.map((prompt) => (
+          <article className="panel-card prompt-card" key={prompt.id}>
+            <strong>{prompt.shot_label} · {prompt.version}</strong>
+            <p>{prompt.t2i_prompt || prompt.i2v_prompt || "待生成提示词"}</p>
+            <small>负面词：{prompt.negative_prompt}</small>
+            <button className="ghost-mini-button" type="button" onClick={() => { void navigator.clipboard?.writeText(prompt.t2i_prompt || prompt.i2v_prompt); setStatusMessage("提示词已复制"); }}>复制</button>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function StepSixSection({
+  project,
+  onSaved,
+  setStatusMessage,
+}: {
+  project: ProjectRecord;
+  onSaved: (project: ProjectRecord, message: string) => void;
+  setStatusMessage: (message: string) => void;
+}) {
+  const [form, setForm] = useState<StepSixData>(project.step_six);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setForm(project.step_six), [project.step_six]);
+
+  function generateImages(scope: "single" | "batch") {
+    const prompts = project.step_five.prompts.length ? project.step_five.prompts : [];
+    const targets = scope === "single" ? prompts.slice(0, 1) : prompts;
+    const candidates = targets.flatMap((prompt, index) =>
+      [0, 1].map((variant) => ({
+        id: `img-${prompt.id}-${variant}-${Date.now()}`,
+        shot_id: prompt.shot_id,
+        shot_label: prompt.shot_label,
+        url: `/images/hero-role-rin.png`,
+        prompt: prompt.t2i_prompt || prompt.i2v_prompt,
+        status: index === 0 && variant === 0 ? "first-frame" as const : "candidate" as const,
+        metadata: `${prompt.parameters}；候选 ${variant + 1}`,
+      }))
+    );
+    setForm((current) => ({ ...current, candidates: [...current.candidates, ...candidates] }));
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const saved = await saveStepSix(project.id, form);
+      onSaved(saved, "步骤六画面候选已保存");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="editor-section" id="image-generation">
+      <div className="section-headline">
+        <div>
+          <span className="eyebrow">步骤六</span>
+          <h2>画面生成</h2>
+          <p>根据 T2I 提示词生成占位候选图，支持筛选、预览、设为首帧/关键帧、废弃与复制提示词。</p>
+        </div>
+        <div className="chip-row"><span className="ghost-chip">候选图 {form.candidates.length}</span></div>
+      </div>
+      <div className="action-row">
+        <select value={form.generation_filter} onChange={(event) => setForm({ ...form, generation_filter: event.target.value })}>
+          <option value="待生成">待生成</option>
+          <option value="候选">候选</option>
+          <option value="关键帧">关键帧</option>
+        </select>
+        <button className="primary-pill inline-pill" type="button" onClick={() => generateImages("batch")}>批量生成图片</button>
+        <button className="ghost-button inline-button" type="button" onClick={() => generateImages("single")}>单镜生成</button>
+        <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存候选图"}</button>
+      </div>
+      <div className="image-candidate-grid">
+        {form.candidates.map((image) => (
+          <article className="panel-card image-candidate-card" key={image.id}>
+            <img src={image.url} alt={image.shot_label} />
+            <strong>{image.shot_label} · {image.status}</strong>
+            <p>{image.metadata}</p>
+            <div className="action-row">
+              <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "first-frame" } : item) }))}>首帧</button>
+              <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "keyframe" } : item) }))}>关键帧</button>
+              <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "discarded" } : item) }))}>废弃</button>
+              <button className="ghost-mini-button" type="button" onClick={() => { void navigator.clipboard?.writeText(image.prompt); setStatusMessage("图片提示词已复制"); }}>复制词</button>
+            </div>
+          </article>
+        ))}
+      </div>
     </section>
   );
 }

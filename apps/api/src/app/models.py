@@ -125,8 +125,11 @@ class AssetCharacter(BaseModel):
     id: str = ""
     name: str = ""
     role: str = ""
+    age: str = ""
+    personality: str = ""
     appearance: str = ""
     motivation: str = ""
+    outfit: str = ""
 
 
 class AssetScene(BaseModel):
@@ -144,13 +147,87 @@ class AssetProp(BaseModel):
     story_function: str = ""
 
 
+class AssetCandidate(BaseModel):
+    id: str = ""
+    category: Literal["character", "scene", "prop"] = "character"
+    name: str = ""
+    description: str = ""
+    selected: bool = False
+
+
 class StepThreeData(BaseModel):
+    candidates: list[AssetCandidate] = Field(default_factory=list)
     characters: list[AssetCharacter] = Field(default_factory=list)
     scenes: list[AssetScene] = Field(default_factory=list)
     props: list[AssetProp] = Field(default_factory=list)
     style_board: str = ""
     reference_notes: str = ""
+    prompt_templates: str = ""
     consistency_rules: str = ""
+
+
+class ShotItem(BaseModel):
+    id: str = ""
+    episode_number: int = 1
+    shot_number: int = 1
+    scene: str = ""
+    characters: list[str] = Field(default_factory=list)
+    props: list[str] = Field(default_factory=list)
+    purpose: str = ""
+    duration_seconds: int = 5
+    shot_size: str = ""
+    camera_angle: str = ""
+    composition: str = ""
+    movement: str = ""
+    dialogue: str = ""
+    rhythm: str = ""
+    status: Literal["draft", "ready", "queued"] = "draft"
+
+
+class StepFourData(BaseModel):
+    selected_episode_number: int = 1
+    shots: list[ShotItem] = Field(default_factory=list)
+    task_preview: str = ""
+    total_duration_seconds: int = 0
+
+
+class PromptItem(BaseModel):
+    id: str = ""
+    shot_id: str = ""
+    shot_label: str = ""
+    selected: bool = False
+    t2i_prompt: str = ""
+    i2v_prompt: str = ""
+    negative_prompt: str = ""
+    parameters: str = ""
+    locked_terms: str = ""
+    version: str = ""
+
+
+class StepFiveData(BaseModel):
+    selected_episode_number: int = 1
+    filter_text: str = ""
+    prompts: list[PromptItem] = Field(default_factory=list)
+    negative_template: str = "低清晰度、畸形手指、角色不一致、字幕残影、过曝、模糊"
+    parameter_template: str = "16:9, 1080p, cinematic lighting, seed fixed"
+    batch_replace_from: str = ""
+    batch_replace_to: str = ""
+
+
+class ImageCandidate(BaseModel):
+    id: str = ""
+    shot_id: str = ""
+    shot_label: str = ""
+    url: str = ""
+    prompt: str = ""
+    status: Literal["candidate", "keyframe", "first-frame", "discarded"] = "candidate"
+    metadata: str = ""
+
+
+class StepSixData(BaseModel):
+    selected_shot_id: str = ""
+    generation_filter: str = "待生成"
+    candidates: list[ImageCandidate] = Field(default_factory=list)
 
 
 class ProjectSummary(BaseModel):
@@ -176,6 +253,9 @@ class ProjectRecord(BaseModel):
     step_one: StepOneData = Field(default_factory=StepOneData)
     step_two: StepTwoData = Field(default_factory=StepTwoData)
     step_three: StepThreeData = Field(default_factory=StepThreeData)
+    step_four: StepFourData = Field(default_factory=StepFourData)
+    step_five: StepFiveData = Field(default_factory=StepFiveData)
+    step_six: StepSixData = Field(default_factory=StepSixData)
 
 
 class CreateProjectRequest(BaseModel):
@@ -208,6 +288,22 @@ class SaveStepOneRequest(BaseModel):
 
 class SaveStepTwoRequest(BaseModel):
     data: StepTwoData
+
+
+class SaveStepThreeRequest(BaseModel):
+    data: StepThreeData
+
+
+class SaveStepFourRequest(BaseModel):
+    data: StepFourData
+
+
+class SaveStepFiveRequest(BaseModel):
+    data: StepFiveData
+
+
+class SaveStepSixRequest(BaseModel):
+    data: StepSixData
 
 
 class GenerationRequest(BaseModel):

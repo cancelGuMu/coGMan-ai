@@ -1,6 +1,9 @@
 import type {
   ProjectRecord,
   StepCompletionStatus,
+  StepFiveData,
+  StepFourData,
+  StepSixData,
   StepThreeData,
   StepId,
   StepOneData,
@@ -240,12 +243,43 @@ export function defaultStepTwoData(projectName = ""): StepTwoData {
 
 export function defaultStepThreeData(): StepThreeData {
   return {
+    candidates: [],
     characters: [],
     scenes: [],
     props: [],
     style_board: "",
     reference_notes: "",
+    prompt_templates: "",
     consistency_rules: "",
+  };
+}
+
+export function defaultStepFourData(): StepFourData {
+  return {
+    selected_episode_number: 1,
+    shots: [],
+    task_preview: "",
+    total_duration_seconds: 0,
+  };
+}
+
+export function defaultStepFiveData(): StepFiveData {
+  return {
+    selected_episode_number: 1,
+    filter_text: "",
+    prompts: [],
+    negative_template: "低清晰度、畸形手指、角色不一致、字幕残影、过曝、模糊",
+    parameter_template: "16:9, 1080p, cinematic lighting, seed fixed",
+    batch_replace_from: "",
+    batch_replace_to: "",
+  };
+}
+
+export function defaultStepSixData(): StepSixData {
+  return {
+    selected_shot_id: "",
+    generation_filter: "待生成",
+    candidates: [],
   };
 }
 
@@ -253,6 +287,9 @@ export function mergeProjectDefaults(project: ProjectRecord): ProjectRecord {
   const stepOneDefaults = defaultStepOneData(project.name);
   const stepTwoDefaults = defaultStepTwoData(project.name);
   const stepThreeDefaults = defaultStepThreeData();
+  const stepFourDefaults = defaultStepFourData();
+  const stepFiveDefaults = defaultStepFiveData();
+  const stepSixDefaults = defaultStepSixData();
 
   return {
     ...project,
@@ -277,6 +314,18 @@ export function mergeProjectDefaults(project: ProjectRecord): ProjectRecord {
     step_three: {
       ...stepThreeDefaults,
       ...(project.step_three ?? stepThreeDefaults),
+    },
+    step_four: {
+      ...stepFourDefaults,
+      ...(project.step_four ?? stepFourDefaults),
+    },
+    step_five: {
+      ...stepFiveDefaults,
+      ...(project.step_five ?? stepFiveDefaults),
+    },
+    step_six: {
+      ...stepSixDefaults,
+      ...(project.step_six ?? stepSixDefaults),
     },
   };
 }
