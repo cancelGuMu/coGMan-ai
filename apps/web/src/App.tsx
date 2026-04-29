@@ -39,7 +39,7 @@ import {
   updateProjectCover,
 } from "./api";
 import { defaultStepOneData, defaultStepTwoData, mergeProjectDefaults, workflowSteps } from "./data";
-import { assertImportableFile, buildStepOneChunks, buildStepTwoChunks, mergeChunkResults } from "./payload";
+import { assertImportableFile, buildStepOneChunks, buildStepTwoChunks, mergeChunkResults, parseSeasonOutlineResult } from "./payload";
 import type {
   DashboardOverview,
   DashboardRange,
@@ -2487,31 +2487,36 @@ function StepOneSection({
     setAiGenerating(true);
     setStatusMessage("AI 正在生成季纲草案...");
     try {
-      const chunks = buildStepOneChunks(form.core_story_idea);
+      const chunks = buildStepOneChunks(form.core_story_idea, form.episodes.length);
       const partials: string[] = [];
       for (let index = 0; index < chunks.length; index += 1) {
         setStatusMessage(`AI 正在生成第 ${index + 1}/${chunks.length} 段季纲...`);
         const result = await generateStepOneOutline(form.project_name || project.name, chunks[index]);
         partials.push(result.content);
       }
-      const lines = mergeChunkResults(partials)
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line)
-        .slice(0, form.episodes.length);
-
       setIsDirty(true);
       const mergedOutline = mergeChunkResults(partials);
+      const parsedOutline = parseSeasonOutlineResult(mergedOutline);
+      const parsedEpisodes = new Map(parsedOutline.episodes.map((episode) => [episode.episode_number, episode]));
       setForm((current) => ({
         ...current,
-        season_outline: mergedOutline,
-        episodes: current.episodes.map((episode, index) => ({
-          ...episode,
-          content: lines[index] ?? episode.content,
-          hook: episode.hook || `第 ${episode.episode_number} 集结尾留出关键钩子`,
-        })),
+        season_outline: parsedOutline.season_outline || mergedOutline,
+        episodes: current.episodes.map((episode) => {
+          const parsedEpisode = parsedEpisodes.get(episode.episode_number);
+          if (!parsedEpisode) return episode;
+          return {
+            ...episode,
+            title: parsedEpisode.title || episode.title,
+            content: parsedEpisode.content || episode.content,
+            hook: parsedEpisode.hook || episode.hook,
+          };
+        }),
       }));
-      setStatusMessage("AI 已生成季纲草案，你可以继续逐集编辑。");
+      setStatusMessage(
+        parsedOutline.formatted
+          ? "AI 已生成季纲草案，你可以继续逐集编辑。"
+          : "AI 已生成季纲原文，但返回格式异常，已保留在整季纲中，请整理或重新生成。"
+      );
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "AI 生成失败");
     } finally {

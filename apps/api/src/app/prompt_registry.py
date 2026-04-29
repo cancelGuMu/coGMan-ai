@@ -90,8 +90,18 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         step_id="story-structure",
         model_role="text_planner",
         system_prompt=TEXT_MODEL_SYSTEM,
-        user_instruction="生成整季故事架构和单集大纲，支持 12 集、24 集、36 集或自定义集数。",
-        output_contract="每集必须包含标题、核心事件、爽点、钩子、反转、结尾悬念、角色变化和下游生产提示。",
+        user_instruction=(
+            "生成整季故事架构和单集大纲，严格依据用户给出的目标集数输出。"
+            "禁止输出寒暄、前置说明、假设声明、Markdown 标题、编号解释或工作过程。"
+        ),
+        output_contract=(
+            "只返回一个合法 JSON 对象，不要使用 ``` 包裹。"
+            "JSON 结构：{\"season_outline\":\"整季主线、人物成长、世界规则、阶段节奏与终局悬念\","
+            "\"episodes\":[{\"episode_number\":1,\"title\":\"本集标题\","
+            "\"content\":\"本集核心事件、爽点、反转、角色变化和下游生产提示\","
+            "\"hook\":\"结尾钩子或悬念\"}]}。"
+            "episodes 数量必须等于目标集数；episode_number 必须从 1 连续递增；content 不得写成说明文字。"
+        ),
         required_inputs=("project_name", "prompt"),
     ),
     "S01_CONTINUITY_CHECK": PromptTask(

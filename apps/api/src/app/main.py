@@ -380,6 +380,8 @@ def generate_step_one_outline(payload: GenerationRequest) -> GeneratedTextRespon
     prompt = (
         f"{task.user_instruction}\n"
         f"输出要求：{task.output_contract}\n\n"
+        "硬性格式：最终回答必须以 { 开头、以 } 结尾，且可被 JSON.parse 直接解析。\n"
+        "如果素材不足，也要基于已有信息补齐结构，不要输出任何解释性段落。\n\n"
         f"{payload.prompt}"
     )
     try:
