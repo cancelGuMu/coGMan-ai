@@ -225,14 +225,205 @@ export type ImageCandidate = {
   shot_label: string;
   url: string;
   prompt: string;
-  status: "candidate" | "keyframe" | "first-frame" | "discarded";
+  status: "candidate" | "keyframe" | "first-frame" | "selected" | "discarded";
   metadata: string;
+  repaint_prompt: string;
 };
 
 export type StepSixData = {
   selected_shot_id: string;
   generation_filter: string;
   candidates: ImageCandidate[];
+  repaint_mask_note: string;
+  repaint_prompt: string;
+  selected_package_note: string;
+  validation_report: string;
+};
+
+export type QualityReportItem = {
+  id: string;
+  asset_id: string;
+  shot_label: string;
+  severity: "low" | "medium" | "high";
+  category: "角色一致性" | "场景道具" | "分镜符合性" | "生成错误";
+  issue: string;
+  suggestion: string;
+  repair_prompt: string;
+  status: "pending" | "rework" | "passed";
+  recheck_result: string;
+};
+
+export type ReworkTask = {
+  id: string;
+  source_issue_id: string;
+  asset_id: string;
+  title: string;
+  prompt: string;
+  status: "todo" | "done";
+};
+
+export type StepSevenData = {
+  selected_asset_id: string;
+  reports: QualityReportItem[];
+  rework_tasks: ReworkTask[];
+  checklist_note: string;
+  export_text: string;
+  validation_report: string;
+};
+
+export type VideoClipItem = {
+  id: string;
+  shot_id: string;
+  shot_label: string;
+  source_image_id: string;
+  url: string;
+  duration_seconds: number;
+  motion_prompt: string;
+  reference_note: string;
+  status: "candidate" | "final" | "failed";
+  fail_reason: string;
+  regeneration_strategy: string;
+  version: string;
+  metadata: string;
+};
+
+export type StepEightData = {
+  selected_clip_id: string;
+  filter_text: string;
+  clips: VideoClipItem[];
+  motion_settings: string;
+  reference_bindings: string;
+  integrity_report: string;
+  validation_report: string;
+};
+
+export type DialogueLine = {
+  id: string;
+  shot_id: string;
+  shot_label: string;
+  speaker: string;
+  text: string;
+  emotion: string;
+  pause_seconds: number;
+  audio_status: "pending" | "generated";
+};
+
+export type VoiceProfile = {
+  id: string;
+  character: string;
+  tone: string;
+  speed: string;
+  emotion_strength: string;
+};
+
+export type SubtitleCue = {
+  id: string;
+  shot_id: string;
+  start_seconds: number;
+  end_seconds: number;
+  text: string;
+};
+
+export type SoundEffectItem = {
+  id: string;
+  shot_label: string;
+  type: "环境音" | "动作音效" | "转场音效";
+  description: string;
+  volume: number;
+};
+
+export type StepNineData = {
+  dialogue_lines: DialogueLine[];
+  voice_profiles: VoiceProfile[];
+  subtitle_cues: SubtitleCue[];
+  subtitle_style: string;
+  sound_effects: SoundEffectItem[];
+  bgm_settings: string;
+  mix_settings: string;
+  lip_sync_tasks: string[];
+  validation_report: string;
+};
+
+export type TimelineClip = {
+  id: string;
+  track: "video" | "audio" | "subtitle" | "effect";
+  name: string;
+  source_id: string;
+  start_seconds: number;
+  end_seconds: number;
+  transition: string;
+  notes: string;
+};
+
+export type ExportVersion = {
+  id: string;
+  format: "横版" | "竖版" | "预告版" | "正片版";
+  status: "draft" | "queued" | "exported";
+  settings: string;
+};
+
+export type CoverCandidate = {
+  id: string;
+  image_url: string;
+  title: string;
+  subtitle: string;
+  tags: string;
+  selected: boolean;
+};
+
+export type StepTenData = {
+  timeline_clips: TimelineClip[];
+  rhythm_marks: string[];
+  transition_settings: string;
+  edit_qc_report: string;
+  export_versions: ExportVersion[];
+  cover_candidates: CoverCandidate[];
+  package_checklist: string;
+  validation_report: string;
+};
+
+export type PublishRecord = {
+  id: string;
+  platform: string;
+  publish_time: string;
+  version: string;
+  title: string;
+  cover: string;
+};
+
+export type PlatformMetric = {
+  id: string;
+  platform: string;
+  plays: number;
+  completion_rate: number;
+  likes: number;
+  comments: number;
+  favorites: number;
+  shares: number;
+  followers: number;
+};
+
+export type OptimizationTask = {
+  id: string;
+  target_step: StepId;
+  issue: string;
+  suggestion: string;
+  priority: "低" | "中" | "高";
+  status: "todo" | "done";
+};
+
+export type StepElevenData = {
+  publish_copy: string;
+  platform_adaptations: string;
+  publish_records: PublishRecord[];
+  metrics: PlatformMetric[];
+  data_import_note: string;
+  retention_analysis: string;
+  comment_summary: string;
+  review_report: string;
+  optimization_tasks: OptimizationTask[];
+  next_episode_suggestions: string;
+  project_completion_status: "进行中" | "已完结" | "进入下一轮";
 };
 
 export type ProjectSummary = {
@@ -261,6 +452,11 @@ export type ProjectRecord = {
   step_four: StepFourData;
   step_five: StepFiveData;
   step_six: StepSixData;
+  step_seven: StepSevenData;
+  step_eight: StepEightData;
+  step_nine: StepNineData;
+  step_ten: StepTenData;
+  step_eleven: StepElevenData;
 };
 
 export type GeneratedTextResponse = {

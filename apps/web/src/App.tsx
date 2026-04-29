@@ -21,10 +21,15 @@ import {
   generateStepTwoContent,
   importTextFile,
   renameProject,
+  saveStepEight,
+  saveStepEleven,
   saveStepFive,
   saveStepFour,
+  saveStepNine,
   saveStepOne,
+  saveStepSeven,
   saveStepSix,
+  saveStepTen,
   saveStepThree,
   saveStepTwo,
   updateProjectCover,
@@ -34,17 +39,29 @@ import { assertImportableFile, buildStepOneChunks, buildStepTwoChunks, mergeChun
 import type {
   DashboardOverview,
   DashboardRange,
+  DialogueLine,
   EpisodeDraft,
+  ExportVersion,
+  ImageCandidate,
+  PlatformMetric,
   ProjectRecord,
   ProjectSummary,
+  QualityReportItem,
   ScriptRhythmNode,
   StepCompletionStatus,
+  StepEightData,
+  StepElevenData,
   StepFiveData,
   StepFourData,
+  StepNineData,
+  StepSevenData,
   StepSixData,
+  StepTenData,
   StepOneData,
   StepThreeData,
   StepTwoData,
+  TimelineClip,
+  VideoClipItem,
 } from "./types";
 
 const dashboardRangeOptions: Array<{ value: DashboardRange; label: string }> = [
@@ -2188,13 +2205,53 @@ function CreativeWorkspaceContent({
             setStatusMessage={setStatusMessage}
           />
         ) : null}
+        {activeStep.id === "quality-rework" ? (
+          <StepSevenSection
+            project={project}
+            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={setStatusMessage}
+          />
+        ) : null}
+        {activeStep.id === "video-generation" ? (
+          <StepEightSection
+            project={project}
+            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={setStatusMessage}
+          />
+        ) : null}
+        {activeStep.id === "audio-subtitle" ? (
+          <StepNineSection
+            project={project}
+            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={setStatusMessage}
+          />
+        ) : null}
+        {activeStep.id === "final-editing" ? (
+          <StepTenSection
+            project={project}
+            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={setStatusMessage}
+          />
+        ) : null}
+        {activeStep.id === "publish-review" ? (
+          <StepElevenSection
+            project={project}
+            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={setStatusMessage}
+          />
+        ) : null}
 
         {activeStep.id !== "story-structure" &&
         activeStep.id !== "script-creation" &&
         activeStep.id !== "asset-setting" &&
         activeStep.id !== "storyboard-planning" &&
         activeStep.id !== "prompt-generation" &&
-        activeStep.id !== "image-generation" ? (
+        activeStep.id !== "image-generation" &&
+        activeStep.id !== "quality-rework" &&
+        activeStep.id !== "video-generation" &&
+        activeStep.id !== "audio-subtitle" &&
+        activeStep.id !== "final-editing" &&
+        activeStep.id !== "publish-review" ? (
           <article className="placeholder-card single-step-page" id={activeStep.id}>
             <div className="placeholder-badge">{activeStep.label}</div>
             <h3>{activeStep.label.replace(/^\d+\s*/, "")}</h3>
@@ -3913,6 +3970,7 @@ function StepSixSection({
   const [form, setForm] = useState<StepSixData>(project.step_six);
   const [saving, setSaving] = useState(false);
   useEffect(() => setForm(project.step_six), [project.step_six]);
+  const selectedCount = form.candidates.filter((item) => item.status === "selected" || item.status === "first-frame" || item.status === "keyframe").length;
 
   function generateImages(scope: "single" | "batch") {
     const prompts = project.step_five.prompts.length ? project.step_five.prompts : [];
@@ -3926,9 +3984,55 @@ function StepSixSection({
         prompt: prompt.t2i_prompt || prompt.i2v_prompt,
         status: index === 0 && variant === 0 ? "first-frame" as const : "candidate" as const,
         metadata: `${prompt.parameters}；候选 ${variant + 1}`,
+        repaint_prompt: "",
       }))
     );
     setForm((current) => ({ ...current, candidates: [...current.candidates, ...candidates] }));
+  }
+
+  function regenerateShot(shotId: string) {
+    const prompt = project.step_five.prompts.find((item) => item.shot_id === shotId);
+    if (!prompt) {
+      setStatusMessage("没有找到该镜头的提示词");
+      return;
+    }
+    const candidate: ImageCandidate = {
+      id: `img-reg-${shotId}-${Date.now()}`,
+      shot_id: shotId,
+      shot_label: prompt.shot_label,
+      url: "/images/hero-stage-main.png",
+      prompt: prompt.t2i_prompt || prompt.i2v_prompt,
+      status: "candidate",
+      metadata: `${prompt.parameters}；重新生成版本`,
+      repaint_prompt: form.repaint_prompt,
+    };
+    setForm((current) => ({ ...current, candidates: [...current.candidates, candidate] }));
+    setStatusMessage("已追加重新生成候选图，未覆盖已入选素材");
+  }
+
+  function applyRepaint(imageId: string) {
+    setForm((current) => ({
+      ...current,
+      candidates: current.candidates.map((item) =>
+        item.id === imageId
+          ? { ...item, metadata: `${item.metadata}；局部重绘：${current.repaint_mask_note || "默认蒙版"}`, repaint_prompt: current.repaint_prompt }
+          : item
+      ),
+    }));
+    setStatusMessage("局部重绘占位结果已写入候选图元数据");
+  }
+
+  function validateSelectedPackage() {
+    const shotIds = new Set(project.step_five.prompts.map((item) => item.shot_id));
+    const selectedShotIds = new Set(
+      form.candidates
+        .filter((item) => item.status === "selected" || item.status === "first-frame" || item.status === "keyframe")
+        .map((item) => item.shot_id)
+    );
+    const missing = Array.from(shotIds).filter((id) => !selectedShotIds.has(id));
+    const report = missing.length ? `仍有 ${missing.length} 个镜头未选择入选图：${missing.join("、")}` : "所有镜头都已有入选图，可进入质检返工。";
+    setForm((current) => ({ ...current, validation_report: report, selected_package_note: `入选素材 ${selectedCount} 张` }));
+    setStatusMessage(report);
   }
 
   async function handleSave() {
@@ -3949,7 +4053,7 @@ function StepSixSection({
           <h2>画面生成</h2>
           <p>根据 T2I 提示词生成占位候选图，支持筛选、预览、设为首帧/关键帧、废弃与复制提示词。</p>
         </div>
-        <div className="chip-row"><span className="ghost-chip">候选图 {form.candidates.length}</span></div>
+        <div className="chip-row"><span className="ghost-chip">候选图 {form.candidates.length}</span><span className="ghost-chip">入选 {selectedCount}</span></div>
       </div>
       <div className="action-row">
         <select value={form.generation_filter} onChange={(event) => setForm({ ...form, generation_filter: event.target.value })}>
@@ -3959,8 +4063,14 @@ function StepSixSection({
         </select>
         <button className="primary-pill inline-pill" type="button" onClick={() => generateImages("batch")}>批量生成图片</button>
         <button className="ghost-button inline-button" type="button" onClick={() => generateImages("single")}>单镜生成</button>
+        <button className="ghost-button inline-button" type="button" onClick={validateSelectedPackage}>进入质检校验</button>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存候选图"}</button>
       </div>
+      <div className="field-row compact-row">
+        <label className="field-label"><span>局部重绘蒙版说明</span><input value={form.repaint_mask_note} onChange={(event) => setForm({ ...form, repaint_mask_note: event.target.value })} placeholder="例如：只修复手部和袖口" /></label>
+        <label className="field-label"><span>局部重绘指令</span><input value={form.repaint_prompt} onChange={(event) => setForm({ ...form, repaint_prompt: event.target.value })} placeholder="例如：保持角色脸型，仅修复手指畸形" /></label>
+      </div>
+      {form.validation_report ? <div className="hint-text">{form.validation_report}</div> : null}
       <div className="image-candidate-grid">
         {form.candidates.map((image) => (
           <article className="panel-card image-candidate-card" key={image.id}>
@@ -3970,9 +4080,630 @@ function StepSixSection({
             <div className="action-row">
               <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "first-frame" } : item) }))}>首帧</button>
               <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "keyframe" } : item) }))}>关键帧</button>
+              <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "selected" } : item) }))}>入选</button>
               <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "discarded" } : item) }))}>废弃</button>
+              <button className="ghost-mini-button" type="button" onClick={() => regenerateShot(image.shot_id)}>重生成</button>
+              <button className="ghost-mini-button" type="button" onClick={() => applyRepaint(image.id)}>局部重绘</button>
               <button className="ghost-mini-button" type="button" onClick={() => { void navigator.clipboard?.writeText(image.prompt); setStatusMessage("图片提示词已复制"); }}>复制词</button>
             </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function StepSevenSection({
+  project,
+  onSaved,
+  setStatusMessage,
+}: {
+  project: ProjectRecord;
+  onSaved: (project: ProjectRecord, message: string) => void;
+  setStatusMessage: (message: string) => void;
+}) {
+  const [form, setForm] = useState<StepSevenData>(project.step_seven);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setForm(project.step_seven), [project.step_seven]);
+  const selectedImages = project.step_six.candidates.filter((item) => item.status === "selected" || item.status === "first-frame" || item.status === "keyframe");
+
+  function buildReport(image: ImageCandidate, index: number): QualityReportItem {
+    const categories: QualityReportItem["category"][] = ["角色一致性", "场景道具", "分镜符合性", "生成错误"];
+    const category = categories[index % categories.length];
+    return {
+      id: `qc-${image.id}-${Date.now()}-${index}`,
+      asset_id: image.id,
+      shot_label: image.shot_label,
+      severity: index % 3 === 0 ? "high" : index % 2 === 0 ? "medium" : "low",
+      category,
+      issue: category === "生成错误" ? "手部或边缘细节需要人工复核" : `${category}存在轻微偏差`,
+      suggestion: "保留构图与角色身份，针对问题区域重新生成或局部重绘。",
+      repair_prompt: `${image.prompt}，修复${category}问题，保持角色与场景一致`,
+      status: "pending",
+      recheck_result: "",
+    };
+  }
+
+  function runQualityCheck(scope: "single" | "batch") {
+    const targets = scope === "single" ? selectedImages.slice(0, 1) : selectedImages;
+    const reports = targets.map(buildReport);
+    setForm((current) => ({ ...current, reports: [...current.reports, ...reports], selected_asset_id: targets[0]?.id ?? current.selected_asset_id }));
+    setStatusMessage(`已生成 ${reports.length} 条模拟质检报告`);
+  }
+
+  function createReworkTask(report: QualityReportItem) {
+    setForm((current) => ({
+      ...current,
+      reports: current.reports.map((item) => item.id === report.id ? { ...item, status: "rework" } : item),
+      rework_tasks: [
+        ...current.rework_tasks,
+        {
+          id: `rw-${report.id}`,
+          source_issue_id: report.id,
+          asset_id: report.asset_id,
+          title: `${report.shot_label} 返工：${report.category}`,
+          prompt: report.repair_prompt,
+          status: "todo",
+        },
+      ],
+    }));
+    setStatusMessage("已创建返工任务");
+  }
+
+  function markPassed(reportId?: string) {
+    const confirmed = reportId ? true : window.confirm("确认批量标记全部素材通过质检吗？");
+    if (!confirmed) return;
+    setForm((current) => ({
+      ...current,
+      reports: current.reports.map((item) => (!reportId || item.id === reportId ? { ...item, status: "passed", recheck_result: "人工复检通过" } : item)),
+    }));
+    setStatusMessage(reportId ? "该素材已标记通过" : "全部质检项已批量标记通过");
+  }
+
+  function exportReport() {
+    const text = form.reports.map((item) => `${item.shot_label}｜${item.category}｜${item.severity}｜${item.issue}｜建议：${item.suggestion}`).join("\n");
+    setForm((current) => ({ ...current, export_text: text || "暂无质检问题", validation_report: form.reports.some((item) => item.status !== "passed") ? "仍有未通过素材，视频生成将默认拦截。" : "质检已全部通过，可进入视频生成。" }));
+    void navigator.clipboard?.writeText(text || "暂无质检问题");
+    setStatusMessage("质检报告已复制");
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const saved = await saveStepSeven(project.id, form);
+      onSaved(saved, "步骤七质检返工已保存");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="editor-section" id="quality-rework">
+      <div className="section-headline">
+        <div>
+          <span className="eyebrow">步骤七</span>
+          <h2>质检返工</h2>
+          <p>检查入选图的角色一致性、场景道具、分镜符合性和生成错误，并生成返工建议。</p>
+        </div>
+        <div className="chip-row"><span className="ghost-chip">待检素材 {selectedImages.length}</span><span className="ghost-chip">问题 {form.reports.length}</span></div>
+      </div>
+      <div className="action-row">
+        <button className="primary-pill inline-pill" type="button" onClick={() => runQualityCheck("batch")}>批量模拟质检</button>
+        <button className="ghost-button inline-button" type="button" onClick={() => runQualityCheck("single")}>单素材质检</button>
+        <button className="ghost-button inline-button" type="button" onClick={() => markPassed()}>批量标记通过</button>
+        <button className="ghost-button inline-button" type="button" onClick={exportReport}>导出报告</button>
+        <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存质检"}</button>
+      </div>
+      <div className="field-row compact-row">
+        <label className="field-label"><span>人工检查项</span><textarea value={form.checklist_note} onChange={(event) => setForm({ ...form, checklist_note: event.target.value })} /></label>
+        <label className="field-label"><span>进入视频生成校验</span><textarea value={form.validation_report} onChange={(event) => setForm({ ...form, validation_report: event.target.value })} placeholder="未通过素材会在视频生成前提示。" /></label>
+      </div>
+      <div className="production-grid">
+        {form.reports.map((report) => (
+          <article className="panel-card production-card" key={report.id}>
+            <strong>{report.shot_label} · {report.category}</strong>
+            <span>{report.severity} / {report.status}</span>
+            <p>{report.issue}</p>
+            <small>{report.suggestion}</small>
+            <div className="action-row">
+              <button className="ghost-mini-button" type="button" onClick={() => createReworkTask(report)}>生成返工</button>
+              <button className="ghost-mini-button" type="button" onClick={() => markPassed(report.id)}>标记通过</button>
+              <button className="ghost-mini-button" type="button" onClick={() => { void navigator.clipboard?.writeText(report.repair_prompt); setStatusMessage("返工 prompt 已复制"); }}>复制建议</button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function StepEightSection({
+  project,
+  onSaved,
+  setStatusMessage,
+}: {
+  project: ProjectRecord;
+  onSaved: (project: ProjectRecord, message: string) => void;
+  setStatusMessage: (message: string) => void;
+}) {
+  const [form, setForm] = useState<StepEightData>(project.step_eight);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setForm(project.step_eight), [project.step_eight]);
+  const passedReports = project.step_seven.reports.filter((item) => item.status === "passed");
+  const usableImages = project.step_six.candidates.filter((item) => item.status === "selected" || item.status === "first-frame" || item.status === "keyframe");
+  const visibleClips = form.clips.filter((item) => !form.filter_text || item.shot_label.includes(form.filter_text) || item.status.includes(form.filter_text));
+
+  function generateVideos(scope: "single" | "batch") {
+    const sourceImages = usableImages.filter((image) => !project.step_seven.reports.some((report) => report.asset_id === image.id && report.status !== "passed"));
+    const targets = scope === "single" ? sourceImages.slice(0, 1) : sourceImages;
+    const clips: VideoClipItem[] = targets.map((image, index) => ({
+      id: `clip-${image.id}-${Date.now()}-${index}`,
+      shot_id: image.shot_id,
+      shot_label: image.shot_label,
+      source_image_id: image.id,
+      url: "/images/hero-stage-main.png",
+      duration_seconds: project.step_four.shots.find((shot) => shot.id === image.shot_id)?.duration_seconds ?? 6,
+      motion_prompt: `${form.motion_settings}；${image.prompt}`,
+      reference_note: form.reference_bindings || `首帧绑定：${image.id}`,
+      status: "candidate",
+      fail_reason: "",
+      regeneration_strategy: "缩短时长、保持首帧、降低动作幅度",
+      version: `v${form.clips.length + index + 1}`,
+      metadata: `来源图片：${image.id}；通过质检报告 ${passedReports.length} 条`,
+    }));
+    setForm((current) => ({ ...current, clips: [...current.clips, ...clips], selected_clip_id: clips[0]?.id ?? current.selected_clip_id }));
+    setStatusMessage(`已生成 ${clips.length} 条视频候选记录`);
+  }
+
+  function updateClip(clipId: string, patch: Partial<VideoClipItem>) {
+    setForm((current) => ({ ...current, clips: current.clips.map((item) => item.id === clipId ? { ...item, ...patch } : item) }));
+  }
+
+  function regenerateClip(clip: VideoClipItem) {
+    const next: VideoClipItem = {
+      ...clip,
+      id: `clip-reg-${clip.id}-${Date.now()}`,
+      status: "candidate",
+      fail_reason: "",
+      version: `${clip.version}-R`,
+      metadata: `${clip.metadata}；重生成策略：${clip.regeneration_strategy}`,
+    };
+    setForm((current) => ({ ...current, clips: [...current.clips, next] }));
+    setStatusMessage("已保留旧版本并追加重生成候选视频");
+  }
+
+  function checkIntegrity() {
+    const shotIds = new Set(project.step_four.shots.map((shot) => shot.id));
+    const finalShotIds = new Set(form.clips.filter((clip) => clip.status === "final").map((clip) => clip.shot_id));
+    const missing = Array.from(shotIds).filter((id) => !finalShotIds.has(id));
+    const report = missing.length ? `缺少 ${missing.length} 个镜头的最终片段：${missing.join("、")}` : "每个镜头都已有最终视频片段，可进入音频字幕。";
+    setForm((current) => ({ ...current, integrity_report: report, validation_report: report }));
+    setStatusMessage(report);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const saved = await saveStepEight(project.id, form);
+      onSaved(saved, "步骤八视频生成已保存");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="editor-section" id="video-generation">
+      <div className="section-headline">
+        <div>
+          <span className="eyebrow">步骤八</span>
+          <h2>视频生成</h2>
+          <p>绑定通过质检的关键帧，生成候选视频、记录失败原因、重生成策略并选择最终片段。</p>
+        </div>
+        <div className="chip-row"><span className="ghost-chip">候选视频 {form.clips.length}</span><span className="ghost-chip">最终 {form.clips.filter((item) => item.status === "final").length}</span></div>
+      </div>
+      <div className="action-row">
+        <input value={form.filter_text} onChange={(event) => setForm({ ...form, filter_text: event.target.value })} placeholder="筛选镜头/状态" />
+        <button className="primary-pill inline-pill" type="button" onClick={() => generateVideos("batch")}>批量生成视频</button>
+        <button className="ghost-button inline-button" type="button" onClick={() => generateVideos("single")}>单镜视频</button>
+        <button className="ghost-button inline-button" type="button" onClick={checkIntegrity}>完整性检查</button>
+        <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存视频"}</button>
+      </div>
+      <div className="field-row compact-row">
+        <label className="field-label"><span>动作运镜参数</span><textarea value={form.motion_settings} onChange={(event) => setForm({ ...form, motion_settings: event.target.value })} /></label>
+        <label className="field-label"><span>参考素材绑定</span><textarea value={form.reference_bindings} onChange={(event) => setForm({ ...form, reference_bindings: event.target.value })} /></label>
+      </div>
+      {form.validation_report ? <div className="hint-text">{form.validation_report}</div> : null}
+      <div className="production-grid">
+        {visibleClips.map((clip) => (
+          <article className="panel-card production-card" key={clip.id}>
+            <strong>{clip.shot_label} · {clip.version}</strong>
+            <span>{clip.duration_seconds}s / {clip.status}</span>
+            <p>{clip.motion_prompt}</p>
+            <small>{clip.metadata}</small>
+            <input value={clip.fail_reason} onChange={(event) => updateClip(clip.id, { fail_reason: event.target.value })} placeholder="失败原因：人物变形/动作错/镜头不符" />
+            <div className="action-row">
+              <button className="ghost-mini-button" type="button" onClick={() => updateClip(clip.id, { status: "final" })}>设为最终</button>
+              <button className="ghost-mini-button" type="button" onClick={() => updateClip(clip.id, { status: "failed", fail_reason: clip.fail_reason || "人工标记失败" })}>标记失败</button>
+              <button className="ghost-mini-button" type="button" onClick={() => regenerateClip(clip)}>重生成</button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function StepNineSection({
+  project,
+  onSaved,
+  setStatusMessage,
+}: {
+  project: ProjectRecord;
+  onSaved: (project: ProjectRecord, message: string) => void;
+  setStatusMessage: (message: string) => void;
+}) {
+  const [form, setForm] = useState<StepNineData>(project.step_nine);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setForm(project.step_nine), [project.step_nine]);
+
+  function extractDialogue() {
+    const shots = project.step_four.shots.length ? project.step_four.shots : [];
+    const lines: DialogueLine[] = shots.map((shot, index) => ({
+      id: `line-${shot.id}-${Date.now()}`,
+      shot_id: shot.id,
+      shot_label: `第${shot.episode_number}集 #${shot.shot_number}`,
+      speaker: shot.characters[0] || "旁白",
+      text: shot.dialogue || shot.purpose || "根据画面补充一句推动剧情的台词。",
+      emotion: index % 2 ? "紧张" : "克制",
+      pause_seconds: 0.4,
+      audio_status: "pending",
+    }));
+    const voiceProfiles = Array.from(new Set(lines.map((line) => line.speaker))).map((character) => ({
+      id: `voice-${character}`,
+      character,
+      tone: character === "旁白" ? "沉稳叙述" : "清亮自然",
+      speed: "中速",
+      emotion_strength: "中",
+    }));
+    setForm((current) => ({ ...current, dialogue_lines: lines, voice_profiles: voiceProfiles }));
+    setStatusMessage(`已提取 ${lines.length} 条台词/旁白`);
+  }
+
+  function generateAudio(includeNarration = false) {
+    setForm((current) => ({
+      ...current,
+      dialogue_lines: current.dialogue_lines.map((line) => includeNarration || line.speaker !== "旁白" ? { ...line, audio_status: "generated" } : line),
+      lip_sync_tasks: current.dialogue_lines.map((line) => `口型同步任务：${line.shot_label} / ${line.speaker}`),
+    }));
+    setStatusMessage(includeNarration ? "旁白与对白音频占位已生成" : "角色配音占位已生成");
+  }
+
+  function generateSubtitles() {
+    let cursor = 0;
+    const cues = form.dialogue_lines.map((line) => {
+      const duration = Math.max(1.8, line.text.length * 0.16 + line.pause_seconds);
+      const cue = {
+        id: `sub-${line.id}`,
+        shot_id: line.shot_id,
+        start_seconds: Number(cursor.toFixed(1)),
+        end_seconds: Number((cursor + duration).toFixed(1)),
+        text: line.text,
+      };
+      cursor += duration;
+      return cue;
+    });
+    setForm((current) => ({ ...current, subtitle_cues: cues }));
+    setStatusMessage("字幕时间轴已生成");
+  }
+
+  function addSoundEffect() {
+    setForm((current) => ({
+      ...current,
+      sound_effects: [
+        ...current.sound_effects,
+        { id: `sfx-${Date.now()}`, shot_label: current.dialogue_lines[0]?.shot_label || "全片", type: "环境音", description: "低频环境氛围", volume: 55 },
+      ],
+    }));
+  }
+
+  function checkAudioSubtitle() {
+    const missingAudio = form.dialogue_lines.filter((line) => line.audio_status !== "generated").length;
+    const missingSubtitles = Math.max(0, form.dialogue_lines.length - form.subtitle_cues.length);
+    const report = missingAudio || missingSubtitles ? `缺失配音 ${missingAudio} 条，缺失字幕 ${missingSubtitles} 条，可继续但有风险。` : "配音与字幕完整，可进入剪辑成片。";
+    setForm((current) => ({ ...current, validation_report: report }));
+    setStatusMessage(report);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const saved = await saveStepNine(project.id, form);
+      onSaved(saved, "步骤九音频字幕已保存");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="editor-section" id="audio-subtitle">
+      <div className="section-headline">
+        <div>
+          <span className="eyebrow">步骤九</span>
+          <h2>音频字幕</h2>
+          <p>从剧本和分镜提取台词，生成配音、旁白、字幕、音效、BGM、混音和口型同步任务。</p>
+        </div>
+        <div className="chip-row"><span className="ghost-chip">台词 {form.dialogue_lines.length}</span><span className="ghost-chip">字幕 {form.subtitle_cues.length}</span></div>
+      </div>
+      <div className="action-row">
+        <button className="primary-pill inline-pill" type="button" onClick={extractDialogue}>提取台词</button>
+        <button className="ghost-button inline-button" type="button" onClick={() => generateAudio(false)}>生成配音</button>
+        <button className="ghost-button inline-button" type="button" onClick={() => generateAudio(true)}>生成旁白</button>
+        <button className="ghost-button inline-button" type="button" onClick={generateSubtitles}>生成字幕</button>
+        <button className="ghost-button inline-button" type="button" onClick={addSoundEffect}>新增音效</button>
+        <button className="ghost-button inline-button" type="button" onClick={checkAudioSubtitle}>完整性检查</button>
+        <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存音频字幕"}</button>
+      </div>
+      <div className="field-row compact-row">
+        <label className="field-label"><span>字幕样式</span><textarea value={form.subtitle_style} onChange={(event) => setForm({ ...form, subtitle_style: event.target.value })} /></label>
+        <label className="field-label"><span>BGM 设置</span><textarea value={form.bgm_settings} onChange={(event) => setForm({ ...form, bgm_settings: event.target.value })} /></label>
+        <label className="field-label"><span>混音参数</span><textarea value={form.mix_settings} onChange={(event) => setForm({ ...form, mix_settings: event.target.value })} /></label>
+      </div>
+      {form.validation_report ? <div className="hint-text">{form.validation_report}</div> : null}
+      <div className="production-grid">
+        {form.dialogue_lines.map((line) => (
+          <article className="panel-card production-card" key={line.id}>
+            <strong>{line.shot_label} · {line.speaker}</strong>
+            <span>{line.emotion} / {line.audio_status}</span>
+            <p>{line.text}</p>
+            <small>暂停 {line.pause_seconds}s；播放控件占位：{line.audio_status === "generated" ? "可播放模拟音频" : "待生成"}</small>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function StepTenSection({
+  project,
+  onSaved,
+  setStatusMessage,
+}: {
+  project: ProjectRecord;
+  onSaved: (project: ProjectRecord, message: string) => void;
+  setStatusMessage: (message: string) => void;
+}) {
+  const [form, setForm] = useState<StepTenData>(project.step_ten);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setForm(project.step_ten), [project.step_ten]);
+
+  function autoArrange() {
+    let cursor = 0;
+    const videoClips: TimelineClip[] = project.step_eight.clips.filter((clip) => clip.status === "final").map((clip) => {
+      const start = cursor;
+      cursor += clip.duration_seconds;
+      return { id: `tl-video-${clip.id}`, track: "video", name: clip.shot_label, source_id: clip.id, start_seconds: start, end_seconds: cursor, transition: "硬切", notes: clip.metadata };
+    });
+    const subtitleClips: TimelineClip[] = project.step_nine.subtitle_cues.map((cue) => ({ id: `tl-sub-${cue.id}`, track: "subtitle", name: cue.text, source_id: cue.id, start_seconds: cue.start_seconds, end_seconds: cue.end_seconds, transition: "无", notes: "字幕轨" }));
+    const exportVersions: ExportVersion[] = ["正片版", "竖版", "横版", "预告版"].map((format) => ({ id: `export-${format}`, format: format as ExportVersion["format"], status: "draft", settings: `${format} / 1080p / H.264` }));
+    setForm((current) => ({
+      ...current,
+      timeline_clips: [...videoClips, ...subtitleClips],
+      export_versions: exportVersions,
+      rhythm_marks: ["开头钩子 0s", `结尾悬念 ${cursor}s`],
+      package_checklist: `视频 ${videoClips.length} 段；字幕 ${subtitleClips.length} 条；总时长 ${cursor}s`,
+    }));
+    setStatusMessage("已按分镜顺序自动编排时间线");
+  }
+
+  function checkAlignment() {
+    const videoEnd = Math.max(0, ...form.timeline_clips.filter((clip) => clip.track === "video").map((clip) => clip.end_seconds));
+    const subtitleEnd = Math.max(0, ...form.timeline_clips.filter((clip) => clip.track === "subtitle").map((clip) => clip.end_seconds));
+    const report = subtitleEnd > videoEnd + 1 ? "字幕时间超过视频总时长，请检查尾部字幕。" : "音画字幕对齐检查通过。";
+    setForm((current) => ({ ...current, edit_qc_report: report, validation_report: report }));
+    setStatusMessage(report);
+  }
+
+  function createExportTask() {
+    setForm((current) => ({ ...current, export_versions: current.export_versions.map((item) => ({ ...item, status: item.status === "draft" ? "queued" : item.status })) }));
+    setStatusMessage("导出任务已创建，可追踪横版/竖版/预告版/正片版");
+  }
+
+  function addCoverCandidate() {
+    const source = project.step_six.candidates.find((item) => item.status === "selected" || item.status === "keyframe" || item.status === "first-frame");
+    setForm((current) => ({
+      ...current,
+      cover_candidates: [
+        ...current.cover_candidates,
+        { id: `cover-${Date.now()}`, image_url: source?.url || "/images/hero-role-rin.png", title: project.name, subtitle: "命运反转，从这一刻开始", tags: "高能,反转,短剧", selected: current.cover_candidates.length === 0 },
+      ],
+    }));
+  }
+
+  function validatePublishPackage() {
+    const hasExport = form.export_versions.some((item) => item.status === "queued" || item.status === "exported");
+    const hasCover = form.cover_candidates.some((item) => item.selected);
+    const report = hasExport && hasCover ? "发布素材包完整，可进入发布复盘。" : `缺少${hasExport ? "" : "导出版本"}${!hasExport && !hasCover ? "、" : ""}${hasCover ? "" : "默认封面"}。`;
+    setForm((current) => ({ ...current, validation_report: report, package_checklist: `${current.package_checklist}\n${report}`.trim() }));
+    setStatusMessage(report);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const saved = await saveStepTen(project.id, form);
+      onSaved(saved, "步骤十剪辑成片已保存");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="editor-section" id="final-editing">
+      <div className="section-headline">
+        <div>
+          <span className="eyebrow">步骤十</span>
+          <h2>剪辑成片</h2>
+          <p>把视频、音频、字幕、转场、节奏点、导出版本和封面候选整合成发布素材包。</p>
+        </div>
+        <div className="chip-row"><span className="ghost-chip">时间线 {form.timeline_clips.length}</span><span className="ghost-chip">导出 {form.export_versions.length}</span></div>
+      </div>
+      <div className="action-row">
+        <button className="primary-pill inline-pill" type="button" onClick={autoArrange}>自动编排</button>
+        <button className="ghost-button inline-button" type="button" onClick={checkAlignment}>音画字幕检查</button>
+        <button className="ghost-button inline-button" type="button" onClick={createExportTask}>创建导出任务</button>
+        <button className="ghost-button inline-button" type="button" onClick={addCoverCandidate}>新增封面候选</button>
+        <button className="ghost-button inline-button" type="button" onClick={validatePublishPackage}>进入发布校验</button>
+        <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存剪辑"}</button>
+      </div>
+      <div className="field-row compact-row">
+        <label className="field-label"><span>转场设置</span><textarea value={form.transition_settings} onChange={(event) => setForm({ ...form, transition_settings: event.target.value })} /></label>
+        <label className="field-label"><span>剪辑质检</span><textarea value={form.edit_qc_report} onChange={(event) => setForm({ ...form, edit_qc_report: event.target.value })} placeholder="字幕遮挡、声音错位、黑帧、跳帧、穿帮" /></label>
+      </div>
+      {form.validation_report ? <div className="hint-text">{form.validation_report}</div> : null}
+      <div className="production-grid">
+        {form.timeline_clips.map((clip) => (
+          <article className="panel-card production-card" key={clip.id}>
+            <strong>{clip.track} · {clip.name}</strong>
+            <span>{clip.start_seconds}s - {clip.end_seconds}s / {clip.transition}</span>
+            <p>{clip.notes}</p>
+          </article>
+        ))}
+        {form.cover_candidates.map((cover) => (
+          <article className="panel-card production-card" key={cover.id}>
+            <img src={cover.image_url} alt={cover.title} />
+            <strong>{cover.title}</strong>
+            <span>{cover.subtitle}</span>
+            <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, cover_candidates: current.cover_candidates.map((item) => ({ ...item, selected: item.id === cover.id })) }))}>设为默认封面</button>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function StepElevenSection({
+  project,
+  onSaved,
+  setStatusMessage,
+}: {
+  project: ProjectRecord;
+  onSaved: (project: ProjectRecord, message: string) => void;
+  setStatusMessage: (message: string) => void;
+}) {
+  const [form, setForm] = useState<StepElevenData>(project.step_eleven);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setForm(project.step_eleven), [project.step_eleven]);
+
+  function generatePublishCopy() {
+    const cover = project.step_ten.cover_candidates.find((item) => item.selected);
+    setForm((current) => ({
+      ...current,
+      publish_copy: `标题：${cover?.title || project.name}\n简介：${cover?.subtitle || "一集看完命运反转。"}\n标签：${cover?.tags || "短剧,AI动画,反转"}\n话题：#AI短剧 #原创故事`,
+    }));
+    setStatusMessage("发布文案已生成");
+  }
+
+  function addPlatformRecord() {
+    setForm((current) => ({
+      ...current,
+      publish_records: [...current.publish_records, { id: `pub-${Date.now()}`, platform: "抖音", publish_time: new Date().toLocaleString(), version: "竖版", title: project.name, cover: "默认封面" }],
+      metrics: [...current.metrics, { id: `metric-${Date.now()}`, platform: "抖音", plays: 12000, completion_rate: 62, likes: 820, comments: 96, favorites: 310, shares: 124, followers: 88 }],
+    }));
+  }
+
+  function summarizeMetrics(metrics = form.metrics) {
+    const plays = metrics.reduce((sum, item) => sum + item.plays, 0);
+    const interactions = metrics.reduce((sum, item) => sum + item.likes + item.comments + item.favorites + item.shares, 0);
+    const avgCompletion = metrics.length ? metrics.reduce((sum, item) => sum + item.completion_rate, 0) / metrics.length : 0;
+    return { plays, interactions, avgCompletion, followers: metrics.reduce((sum, item) => sum + item.followers, 0) };
+  }
+
+  function importDataPlaceholder() {
+    const nextMetrics: PlatformMetric[] = [
+      { id: `metric-dy-${Date.now()}`, platform: "抖音", plays: 28000, completion_rate: 68, likes: 1800, comments: 260, favorites: 620, shares: 340, followers: 210 },
+      { id: `metric-ks-${Date.now()}`, platform: "快手", plays: 14600, completion_rate: 59, likes: 920, comments: 130, favorites: 260, shares: 108, followers: 76 },
+    ];
+    const summary = summarizeMetrics(nextMetrics);
+    setForm((current) => ({ ...current, metrics: nextMetrics, data_import_note: `已模拟导入 ${nextMetrics.length} 个平台数据；总播放 ${summary.plays}` }));
+    setStatusMessage("平台数据导入占位已完成");
+  }
+
+  function generateReviewReport() {
+    const summary = summarizeMetrics();
+    const report = `总播放 ${summary.plays}，平均完播 ${summary.avgCompletion.toFixed(1)}%，互动 ${summary.interactions}，转粉 ${summary.followers}。亮点：开头钩子清晰；问题：中段节奏仍可压缩；优化方向：下一集加强反转前置。`;
+    setForm((current) => ({
+      ...current,
+      review_report: report,
+      retention_analysis: "开头 3 秒留存较高，中段解释段存在跳出风险。",
+      comment_summary: "观众偏好角色反差与悬念结尾，负面反馈集中在节奏偏慢。",
+      optimization_tasks: [
+        ...current.optimization_tasks,
+        { id: `opt-${Date.now()}`, target_step: "script-creation", issue: "中段节奏偏慢", suggestion: "压缩解释台词，把反转提前 8 秒", priority: "高", status: "todo" },
+      ],
+    }));
+    setStatusMessage("复盘报告已生成");
+  }
+
+  function generateNextEpisode() {
+    setForm((current) => ({
+      ...current,
+      next_episode_suggestions: "下一集建议：开场直接承接悬念，用 1 个强冲突镜头确认主角代价；保留角色关系反转；结尾抛出更大的组织线索。",
+    }));
+  }
+
+  function exportReview() {
+    const text = [form.publish_copy, form.review_report, form.next_episode_suggestions].filter(Boolean).join("\n\n");
+    void navigator.clipboard?.writeText(text || "暂无复盘内容");
+    setStatusMessage("发布复盘报告已复制");
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const saved = await saveStepEleven(project.id, form);
+      onSaved(saved, "步骤十一发布复盘已保存");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const metricSummary = summarizeMetrics();
+
+  return (
+    <section className="editor-section" id="publish-review">
+      <div className="section-headline">
+        <div>
+          <span className="eyebrow">步骤十一</span>
+          <h2>发布复盘</h2>
+          <p>生成发布文案，记录平台适配和发布数据，形成复盘报告、优化任务和下一集建议。</p>
+        </div>
+        <div className="chip-row"><span className="ghost-chip">播放 {metricSummary.plays}</span><span className="ghost-chip">完播 {metricSummary.avgCompletion.toFixed(1)}%</span></div>
+      </div>
+      <div className="action-row">
+        <button className="primary-pill inline-pill" type="button" onClick={generatePublishCopy}>生成发布文案</button>
+        <button className="ghost-button inline-button" type="button" onClick={addPlatformRecord}>新增发布记录</button>
+        <button className="ghost-button inline-button" type="button" onClick={importDataPlaceholder}>导入数据占位</button>
+        <button className="ghost-button inline-button" type="button" onClick={generateReviewReport}>生成复盘报告</button>
+        <button className="ghost-button inline-button" type="button" onClick={generateNextEpisode}>下一集建议</button>
+        <button className="ghost-button inline-button" type="button" onClick={exportReview}>导出复盘</button>
+        <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存复盘"}</button>
+      </div>
+      <div className="field-row compact-row">
+        <label className="field-label"><span>发布文案</span><textarea value={form.publish_copy} onChange={(event) => setForm({ ...form, publish_copy: event.target.value })} /></label>
+        <label className="field-label"><span>平台适配</span><textarea value={form.platform_adaptations} onChange={(event) => setForm({ ...form, platform_adaptations: event.target.value })} /></label>
+        <label className="field-label"><span>项目状态</span><select value={form.project_completion_status} onChange={(event) => setForm({ ...form, project_completion_status: event.target.value as StepElevenData["project_completion_status"] })}><option value="进行中">进行中</option><option value="已完结">已完结</option><option value="进入下一轮">进入下一轮</option></select></label>
+      </div>
+      <div className="production-grid">
+        <article className="panel-card production-card"><strong>平台数据汇总</strong><span>互动 {metricSummary.interactions} / 转粉 {metricSummary.followers}</span><p>{form.data_import_note || "等待手动录入或导入平台数据。"}</p></article>
+        <article className="panel-card production-card"><strong>留存分析</strong><p>{form.retention_analysis || "待生成留存分析。"}</p></article>
+        <article className="panel-card production-card"><strong>评论反馈</strong><p>{form.comment_summary || "待整理高赞评论、负面反馈和角色偏好。"}</p></article>
+        <article className="panel-card production-card"><strong>复盘报告</strong><p>{form.review_report || "待生成亮点、问题和优化方向。"}</p></article>
+        {form.optimization_tasks.map((task) => (
+          <article className="panel-card production-card" key={task.id}>
+            <strong>{task.priority}优先级 · 回流 {task.target_step}</strong>
+            <span>{task.status}</span>
+            <p>{task.issue}</p>
+            <small>{task.suggestion}</small>
           </article>
         ))}
       </div>

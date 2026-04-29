@@ -220,14 +220,205 @@ class ImageCandidate(BaseModel):
     shot_label: str = ""
     url: str = ""
     prompt: str = ""
-    status: Literal["candidate", "keyframe", "first-frame", "discarded"] = "candidate"
+    status: Literal["candidate", "keyframe", "first-frame", "selected", "discarded"] = "candidate"
     metadata: str = ""
+    repaint_prompt: str = ""
 
 
 class StepSixData(BaseModel):
     selected_shot_id: str = ""
     generation_filter: str = "待生成"
     candidates: list[ImageCandidate] = Field(default_factory=list)
+    repaint_mask_note: str = ""
+    repaint_prompt: str = ""
+    selected_package_note: str = ""
+    validation_report: str = ""
+
+
+class QualityReportItem(BaseModel):
+    id: str = ""
+    asset_id: str = ""
+    shot_label: str = ""
+    severity: Literal["low", "medium", "high"] = "medium"
+    category: Literal["角色一致性", "场景道具", "分镜符合性", "生成错误"] = "生成错误"
+    issue: str = ""
+    suggestion: str = ""
+    repair_prompt: str = ""
+    status: Literal["pending", "rework", "passed"] = "pending"
+    recheck_result: str = ""
+
+
+class ReworkTask(BaseModel):
+    id: str = ""
+    source_issue_id: str = ""
+    asset_id: str = ""
+    title: str = ""
+    prompt: str = ""
+    status: Literal["todo", "done"] = "todo"
+
+
+class StepSevenData(BaseModel):
+    selected_asset_id: str = ""
+    reports: list[QualityReportItem] = Field(default_factory=list)
+    rework_tasks: list[ReworkTask] = Field(default_factory=list)
+    checklist_note: str = "角色一致性、场景道具、分镜符合性、生成错误四类检查项待执行。"
+    export_text: str = ""
+    validation_report: str = ""
+
+
+class VideoClipItem(BaseModel):
+    id: str = ""
+    shot_id: str = ""
+    shot_label: str = ""
+    source_image_id: str = ""
+    url: str = ""
+    duration_seconds: int = 5
+    motion_prompt: str = ""
+    reference_note: str = ""
+    status: Literal["candidate", "final", "failed"] = "candidate"
+    fail_reason: str = ""
+    regeneration_strategy: str = ""
+    version: str = ""
+    metadata: str = ""
+
+
+class StepEightData(BaseModel):
+    selected_clip_id: str = ""
+    filter_text: str = ""
+    clips: list[VideoClipItem] = Field(default_factory=list)
+    motion_settings: str = "动作：自然推进；表情：贴合台词；环境动态：轻微；运镜：按分镜；时长：跟随镜头。"
+    reference_bindings: str = ""
+    integrity_report: str = ""
+    validation_report: str = ""
+
+
+class DialogueLine(BaseModel):
+    id: str = ""
+    shot_id: str = ""
+    shot_label: str = ""
+    speaker: str = ""
+    text: str = ""
+    emotion: str = ""
+    pause_seconds: float = 0
+    audio_status: Literal["pending", "generated"] = "pending"
+
+
+class VoiceProfile(BaseModel):
+    id: str = ""
+    character: str = ""
+    tone: str = ""
+    speed: str = ""
+    emotion_strength: str = ""
+
+
+class SubtitleCue(BaseModel):
+    id: str = ""
+    shot_id: str = ""
+    start_seconds: float = 0
+    end_seconds: float = 0
+    text: str = ""
+
+
+class SoundEffectItem(BaseModel):
+    id: str = ""
+    shot_label: str = ""
+    type: Literal["环境音", "动作音效", "转场音效"] = "环境音"
+    description: str = ""
+    volume: int = 60
+
+
+class StepNineData(BaseModel):
+    dialogue_lines: list[DialogueLine] = Field(default_factory=list)
+    voice_profiles: list[VoiceProfile] = Field(default_factory=list)
+    subtitle_cues: list[SubtitleCue] = Field(default_factory=list)
+    subtitle_style: str = "字号 42，白字黑描边，底部安全区 12%，横竖版自适应。"
+    sound_effects: list[SoundEffectItem] = Field(default_factory=list)
+    bgm_settings: str = "BGM：悬疑铺底；音量 35%；淡入 1s；淡出 1.5s。"
+    mix_settings: str = "对白 100%，BGM 35%，音效 65%，旁白优先。"
+    lip_sync_tasks: list[str] = Field(default_factory=list)
+    validation_report: str = ""
+
+
+class TimelineClip(BaseModel):
+    id: str = ""
+    track: Literal["video", "audio", "subtitle", "effect"] = "video"
+    name: str = ""
+    source_id: str = ""
+    start_seconds: float = 0
+    end_seconds: float = 0
+    transition: str = ""
+    notes: str = ""
+
+
+class ExportVersion(BaseModel):
+    id: str = ""
+    format: Literal["横版", "竖版", "预告版", "正片版"] = "正片版"
+    status: Literal["draft", "queued", "exported"] = "draft"
+    settings: str = ""
+
+
+class CoverCandidate(BaseModel):
+    id: str = ""
+    image_url: str = ""
+    title: str = ""
+    subtitle: str = ""
+    tags: str = ""
+    selected: bool = False
+
+
+class StepTenData(BaseModel):
+    timeline_clips: list[TimelineClip] = Field(default_factory=list)
+    rhythm_marks: list[str] = Field(default_factory=list)
+    transition_settings: str = "默认硬切；情绪段落使用 0.3s 叠化；转折点使用闪白。"
+    edit_qc_report: str = ""
+    export_versions: list[ExportVersion] = Field(default_factory=list)
+    cover_candidates: list[CoverCandidate] = Field(default_factory=list)
+    package_checklist: str = ""
+    validation_report: str = ""
+
+
+class PublishRecord(BaseModel):
+    id: str = ""
+    platform: str = ""
+    publish_time: str = ""
+    version: str = ""
+    title: str = ""
+    cover: str = ""
+
+
+class PlatformMetric(BaseModel):
+    id: str = ""
+    platform: str = ""
+    plays: int = 0
+    completion_rate: float = 0
+    likes: int = 0
+    comments: int = 0
+    favorites: int = 0
+    shares: int = 0
+    followers: int = 0
+
+
+class OptimizationTask(BaseModel):
+    id: str = ""
+    target_step: StepId = "story-structure"
+    issue: str = ""
+    suggestion: str = ""
+    priority: Literal["低", "中", "高"] = "中"
+    status: Literal["todo", "done"] = "todo"
+
+
+class StepElevenData(BaseModel):
+    publish_copy: str = ""
+    platform_adaptations: str = "抖音/快手：竖版优先；B站：横版或合集；视频号：封面标题清晰。"
+    publish_records: list[PublishRecord] = Field(default_factory=list)
+    metrics: list[PlatformMetric] = Field(default_factory=list)
+    data_import_note: str = ""
+    retention_analysis: str = ""
+    comment_summary: str = ""
+    review_report: str = ""
+    optimization_tasks: list[OptimizationTask] = Field(default_factory=list)
+    next_episode_suggestions: str = ""
+    project_completion_status: Literal["进行中", "已完结", "进入下一轮"] = "进行中"
 
 
 class ProjectSummary(BaseModel):
@@ -256,6 +447,11 @@ class ProjectRecord(BaseModel):
     step_four: StepFourData = Field(default_factory=StepFourData)
     step_five: StepFiveData = Field(default_factory=StepFiveData)
     step_six: StepSixData = Field(default_factory=StepSixData)
+    step_seven: StepSevenData = Field(default_factory=StepSevenData)
+    step_eight: StepEightData = Field(default_factory=StepEightData)
+    step_nine: StepNineData = Field(default_factory=StepNineData)
+    step_ten: StepTenData = Field(default_factory=StepTenData)
+    step_eleven: StepElevenData = Field(default_factory=StepElevenData)
 
 
 class CreateProjectRequest(BaseModel):
@@ -304,6 +500,26 @@ class SaveStepFiveRequest(BaseModel):
 
 class SaveStepSixRequest(BaseModel):
     data: StepSixData
+
+
+class SaveStepSevenRequest(BaseModel):
+    data: StepSevenData
+
+
+class SaveStepEightRequest(BaseModel):
+    data: StepEightData
+
+
+class SaveStepNineRequest(BaseModel):
+    data: StepNineData
+
+
+class SaveStepTenRequest(BaseModel):
+    data: StepTenData
+
+
+class SaveStepElevenRequest(BaseModel):
+    data: StepElevenData
 
 
 class GenerationRequest(BaseModel):

@@ -10,9 +10,14 @@ import type {
   GeneratedTextResponse,
   ProjectRecord,
   ProjectSummary,
+  StepEightData,
+  StepElevenData,
   StepFiveData,
   StepFourData,
+  StepNineData,
+  StepSevenData,
   StepSixData,
+  StepTenData,
   StepOneData,
   StepThreeData,
   StepTwoData,
@@ -120,6 +125,46 @@ export async function saveStepFive(projectId: string, data: StepFiveData): Promi
 
 export async function saveStepSix(projectId: string, data: StepSixData): Promise<ProjectRecord> {
   const response = await request<{ project: ProjectRecord }>(`/api/projects/${projectId}/step-six`, {
+    method: "PUT",
+    body: JSON.stringify({ data }),
+  });
+  return response.project;
+}
+
+export async function saveStepSeven(projectId: string, data: StepSevenData): Promise<ProjectRecord> {
+  const response = await request<{ project: ProjectRecord }>(`/api/projects/${projectId}/step-seven`, {
+    method: "PUT",
+    body: JSON.stringify({ data }),
+  });
+  return response.project;
+}
+
+export async function saveStepEight(projectId: string, data: StepEightData): Promise<ProjectRecord> {
+  const response = await request<{ project: ProjectRecord }>(`/api/projects/${projectId}/step-eight`, {
+    method: "PUT",
+    body: JSON.stringify({ data }),
+  });
+  return response.project;
+}
+
+export async function saveStepNine(projectId: string, data: StepNineData): Promise<ProjectRecord> {
+  const response = await request<{ project: ProjectRecord }>(`/api/projects/${projectId}/step-nine`, {
+    method: "PUT",
+    body: JSON.stringify({ data }),
+  });
+  return response.project;
+}
+
+export async function saveStepTen(projectId: string, data: StepTenData): Promise<ProjectRecord> {
+  const response = await request<{ project: ProjectRecord }>(`/api/projects/${projectId}/step-ten`, {
+    method: "PUT",
+    body: JSON.stringify({ data }),
+  });
+  return response.project;
+}
+
+export async function saveStepEleven(projectId: string, data: StepElevenData): Promise<ProjectRecord> {
+  const response = await request<{ project: ProjectRecord }>(`/api/projects/${projectId}/step-eleven`, {
     method: "PUT",
     body: JSON.stringify({ data }),
   });

@@ -3299,14 +3299,16 @@ select:focus {
 
 .shot-table-grid,
 .prompt-list-grid,
-.image-candidate-grid {
+.image-candidate-grid,
+.production-grid {
   display: grid;
   gap: 16px;
   margin-top: 20px;
 }
 
 .shot-table-grid,
-.prompt-list-grid {
+.prompt-list-grid,
+.production-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -3316,31 +3318,41 @@ select:focus {
 
 .shot-card,
 .prompt-card,
-.image-candidate-card {
+.image-candidate-card,
+.production-card {
   display: grid;
   gap: 10px;
 }
 
 .shot-card span,
 .shot-card small,
+.production-card span,
+.production-card small,
 .prompt-card small,
 .image-candidate-card p {
   color: #c7b48c;
   line-height: 1.7;
 }
 
-.prompt-card p {
+.prompt-card p,
+.production-card p {
   min-height: 72px;
   color: #f0ddb4;
   line-height: 1.7;
 }
 
-.image-candidate-card img {
+.image-candidate-card img,
+.production-card img {
   width: 100%;
   aspect-ratio: 16 / 10;
   object-fit: cover;
   border-radius: 18px;
   border: 1px solid rgba(255, 228, 168, 0.12);
+}
+
+.production-card input,
+.production-card select {
+  width: 100%;
 }
 
 .editor-section select,

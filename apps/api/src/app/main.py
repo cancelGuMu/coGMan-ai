@@ -14,9 +14,14 @@ from .models import (
     ProjectDeleteResponse,
     ProjectListResponse,
     RenameProjectRequest,
+    SaveStepEightRequest,
+    SaveStepElevenRequest,
     SaveStepFiveRequest,
     SaveStepFourRequest,
+    SaveStepNineRequest,
+    SaveStepSevenRequest,
     SaveStepSixRequest,
+    SaveStepTenRequest,
     SaveStepOneRequest,
     SaveStepThreeRequest,
     SaveStepTwoRequest,
@@ -29,10 +34,15 @@ from .storage import (
     list_projects,
     rename_project,
     save_step_one,
-    save_step_three,
+    save_step_eight,
+    save_step_eleven,
     save_step_four,
     save_step_five,
+    save_step_nine,
+    save_step_seven,
     save_step_six,
+    save_step_ten,
+    save_step_three,
     save_step_two,
     update_project_cover,
 )
@@ -275,6 +285,46 @@ def api_save_step_five(project_id: str, payload: SaveStepFiveRequest) -> Project
 @app.put("/api/projects/{project_id}/step-six", response_model=ProjectDetailResponse)
 def api_save_step_six(project_id: str, payload: SaveStepSixRequest) -> ProjectDetailResponse:
     project = save_step_six(project_id, payload)
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return ProjectDetailResponse(project=project)
+
+
+@app.put("/api/projects/{project_id}/step-seven", response_model=ProjectDetailResponse)
+def api_save_step_seven(project_id: str, payload: SaveStepSevenRequest) -> ProjectDetailResponse:
+    project = save_step_seven(project_id, payload)
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return ProjectDetailResponse(project=project)
+
+
+@app.put("/api/projects/{project_id}/step-eight", response_model=ProjectDetailResponse)
+def api_save_step_eight(project_id: str, payload: SaveStepEightRequest) -> ProjectDetailResponse:
+    project = save_step_eight(project_id, payload)
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return ProjectDetailResponse(project=project)
+
+
+@app.put("/api/projects/{project_id}/step-nine", response_model=ProjectDetailResponse)
+def api_save_step_nine(project_id: str, payload: SaveStepNineRequest) -> ProjectDetailResponse:
+    project = save_step_nine(project_id, payload)
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return ProjectDetailResponse(project=project)
+
+
+@app.put("/api/projects/{project_id}/step-ten", response_model=ProjectDetailResponse)
+def api_save_step_ten(project_id: str, payload: SaveStepTenRequest) -> ProjectDetailResponse:
+    project = save_step_ten(project_id, payload)
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return ProjectDetailResponse(project=project)
+
+
+@app.put("/api/projects/{project_id}/step-eleven", response_model=ProjectDetailResponse)
+def api_save_step_eleven(project_id: str, payload: SaveStepElevenRequest) -> ProjectDetailResponse:
+    project = save_step_eleven(project_id, payload)
     if project is None:
         raise HTTPException(status_code=404, detail="项目不存在")
     return ProjectDetailResponse(project=project)

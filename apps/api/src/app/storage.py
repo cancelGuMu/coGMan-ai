@@ -10,9 +10,14 @@ from .models import (
     EpisodeDraft,
     ProjectRecord,
     ProjectSummary,
+    SaveStepEightRequest,
+    SaveStepElevenRequest,
     SaveStepFiveRequest,
     SaveStepFourRequest,
+    SaveStepNineRequest,
+    SaveStepSevenRequest,
     SaveStepSixRequest,
+    SaveStepTenRequest,
     SaveStepOneRequest,
     SaveStepThreeRequest,
     SaveStepTwoRequest,
@@ -226,7 +231,28 @@ def save_step_five(project_id: str, payload: SaveStepFiveRequest) -> ProjectReco
 
 
 def save_step_six(project_id: str, payload: SaveStepSixRequest) -> ProjectRecord | None:
-    return _save_step_data(project_id, "step_six", payload.data, "画面生成中", 90, "image-generation")
+    return _save_step_data(project_id, "step_six", payload.data, "待质检返工", 90, "quality-rework")
+
+
+def save_step_seven(project_id: str, payload: SaveStepSevenRequest) -> ProjectRecord | None:
+    return _save_step_data(project_id, "step_seven", payload.data, "待视频生成", 92, "video-generation")
+
+
+def save_step_eight(project_id: str, payload: SaveStepEightRequest) -> ProjectRecord | None:
+    return _save_step_data(project_id, "step_eight", payload.data, "待音频字幕", 94, "audio-subtitle")
+
+
+def save_step_nine(project_id: str, payload: SaveStepNineRequest) -> ProjectRecord | None:
+    return _save_step_data(project_id, "step_nine", payload.data, "待剪辑成片", 96, "final-editing")
+
+
+def save_step_ten(project_id: str, payload: SaveStepTenRequest) -> ProjectRecord | None:
+    return _save_step_data(project_id, "step_ten", payload.data, "待发布复盘", 98, "publish-review")
+
+
+def save_step_eleven(project_id: str, payload: SaveStepElevenRequest) -> ProjectRecord | None:
+    status = "项目已完结" if payload.data.project_completion_status == "已完结" else "发布复盘中"
+    return _save_step_data(project_id, "step_eleven", payload.data, status, 100, "publish-review")
 
 
 def _save_step_data(

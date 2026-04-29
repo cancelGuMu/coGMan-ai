@@ -1,9 +1,14 @@
 import type {
   ProjectRecord,
+  StepEightData,
+  StepElevenData,
   StepCompletionStatus,
   StepFiveData,
   StepFourData,
+  StepNineData,
+  StepSevenData,
   StepSixData,
+  StepTenData,
   StepThreeData,
   StepId,
   StepOneData,
@@ -280,6 +285,76 @@ export function defaultStepSixData(): StepSixData {
     selected_shot_id: "",
     generation_filter: "待生成",
     candidates: [],
+    repaint_mask_note: "",
+    repaint_prompt: "",
+    selected_package_note: "",
+    validation_report: "",
+  };
+}
+
+export function defaultStepSevenData(): StepSevenData {
+  return {
+    selected_asset_id: "",
+    reports: [],
+    rework_tasks: [],
+    checklist_note: "角色一致性、场景道具、分镜符合性、生成错误四类检查项待执行。",
+    export_text: "",
+    validation_report: "",
+  };
+}
+
+export function defaultStepEightData(): StepEightData {
+  return {
+    selected_clip_id: "",
+    filter_text: "",
+    clips: [],
+    motion_settings: "动作：自然推进；表情：贴合台词；环境动态：轻微；运镜：按分镜；时长：跟随镜头。",
+    reference_bindings: "",
+    integrity_report: "",
+    validation_report: "",
+  };
+}
+
+export function defaultStepNineData(): StepNineData {
+  return {
+    dialogue_lines: [],
+    voice_profiles: [],
+    subtitle_cues: [],
+    subtitle_style: "字号 42，白字黑描边，底部安全区 12%，横竖版自适应。",
+    sound_effects: [],
+    bgm_settings: "BGM：悬疑铺底；音量 35%；淡入 1s；淡出 1.5s。",
+    mix_settings: "对白 100%，BGM 35%，音效 65%，旁白优先。",
+    lip_sync_tasks: [],
+    validation_report: "",
+  };
+}
+
+export function defaultStepTenData(): StepTenData {
+  return {
+    timeline_clips: [],
+    rhythm_marks: [],
+    transition_settings: "默认硬切；情绪段落使用 0.3s 叠化；转折点使用闪白。",
+    edit_qc_report: "",
+    export_versions: [],
+    cover_candidates: [],
+    package_checklist: "",
+    validation_report: "",
+  };
+}
+
+export function defaultStepElevenData(): StepElevenData {
+  return {
+    publish_copy: "",
+    platform_adaptations: "抖音/快手：竖版优先；B站：横版或合集；视频号：封面标题清晰。",
+    publish_records: [],
+    metrics: [],
+    data_import_note: "",
+    retention_analysis: "",
+    comment_summary: "",
+    review_report: "",
+    optimization_tasks: [],
+    next_episode_suggestions: "",
+    project_completion_status: "进行中",
   };
 }
 
@@ -290,6 +365,11 @@ export function mergeProjectDefaults(project: ProjectRecord): ProjectRecord {
   const stepFourDefaults = defaultStepFourData();
   const stepFiveDefaults = defaultStepFiveData();
   const stepSixDefaults = defaultStepSixData();
+  const stepSevenDefaults = defaultStepSevenData();
+  const stepEightDefaults = defaultStepEightData();
+  const stepNineDefaults = defaultStepNineData();
+  const stepTenDefaults = defaultStepTenData();
+  const stepElevenDefaults = defaultStepElevenData();
 
   return {
     ...project,
@@ -326,6 +406,26 @@ export function mergeProjectDefaults(project: ProjectRecord): ProjectRecord {
     step_six: {
       ...stepSixDefaults,
       ...(project.step_six ?? stepSixDefaults),
+    },
+    step_seven: {
+      ...stepSevenDefaults,
+      ...(project.step_seven ?? stepSevenDefaults),
+    },
+    step_eight: {
+      ...stepEightDefaults,
+      ...(project.step_eight ?? stepEightDefaults),
+    },
+    step_nine: {
+      ...stepNineDefaults,
+      ...(project.step_nine ?? stepNineDefaults),
+    },
+    step_ten: {
+      ...stepTenDefaults,
+      ...(project.step_ten ?? stepTenDefaults),
+    },
+    step_eleven: {
+      ...stepElevenDefaults,
+      ...(project.step_eleven ?? stepElevenDefaults),
     },
   };
 }
