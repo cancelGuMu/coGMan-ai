@@ -157,6 +157,18 @@ function getMetricValueFontSize(value: string): string {
   return `${Math.max(28, Math.min(44, 56 - length * 2))}px`;
 }
 
+async function copyTextToClipboard(text: string, onSuccess: string, setStatusMessage: (message: string) => void) {
+  try {
+    if (!navigator.clipboard?.writeText) {
+      throw new Error("Clipboard API unavailable");
+    }
+    await navigator.clipboard.writeText(text);
+    setStatusMessage(onSuccess);
+  } catch {
+    setStatusMessage("浏览器未授予剪贴板权限，内容已保留在页面中，可手动选择复制。");
+  }
+}
+
 function renderRollingMetricValue(value: string) {
   return value.split("").map((char, index) => (
     <span
@@ -2679,8 +2691,7 @@ function StepOneSection({
             <AIGenerationButtonGroup
               onGenerate={() => void handleGenerateOutline()}
               onCopyPrompt={() => {
-                void navigator.clipboard?.writeText(form.core_story_idea || "请基于项目设定生成季纲。");
-                setStatusMessage("已复制步骤一生成提示词");
+                void copyTextToClipboard(form.core_story_idea || "请基于项目设定生成季纲。", "已复制步骤一生成提示词", setStatusMessage);
               }}
             />
             <ImportFileButton label="导入故事思路文件" filename={form.imported_story_name} onChange={handleImport} />
@@ -2988,8 +2999,11 @@ function StepTwoSection({
   }
 
   function exportScriptText() {
-    void navigator.clipboard?.writeText(form.script_text);
-    setStatusMessage(form.script_text.trim() ? "剧本文本已复制到剪贴板。" : "剧本文本为空，暂无可导出内容。");
+    if (!form.script_text.trim()) {
+      setStatusMessage("剧本文本为空，暂无可导出内容。");
+      return;
+    }
+    void copyTextToClipboard(form.script_text, "剧本文本已复制到剪贴板。", setStatusMessage);
   }
 
   async function applyGeneration(
@@ -3950,7 +3964,7 @@ function StepFiveSection({
             <strong>{prompt.shot_label} · {prompt.version}</strong>
             <p>{prompt.t2i_prompt || prompt.i2v_prompt || "待生成提示词"}</p>
             <small>负面词：{prompt.negative_prompt}</small>
-            <button className="ghost-mini-button" type="button" onClick={() => { void navigator.clipboard?.writeText(prompt.t2i_prompt || prompt.i2v_prompt); setStatusMessage("提示词已复制"); }}>复制</button>
+            <button className="ghost-mini-button" type="button" onClick={() => void copyTextToClipboard(prompt.t2i_prompt || prompt.i2v_prompt, "提示词已复制", setStatusMessage)}>复制</button>
           </article>
         ))}
       </div>
@@ -4084,7 +4098,7 @@ function StepSixSection({
               <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "discarded" } : item) }))}>废弃</button>
               <button className="ghost-mini-button" type="button" onClick={() => regenerateShot(image.shot_id)}>重生成</button>
               <button className="ghost-mini-button" type="button" onClick={() => applyRepaint(image.id)}>局部重绘</button>
-              <button className="ghost-mini-button" type="button" onClick={() => { void navigator.clipboard?.writeText(image.prompt); setStatusMessage("图片提示词已复制"); }}>复制词</button>
+              <button className="ghost-mini-button" type="button" onClick={() => void copyTextToClipboard(image.prompt, "图片提示词已复制", setStatusMessage)}>复制词</button>
             </div>
           </article>
         ))}
@@ -4163,8 +4177,7 @@ function StepSevenSection({
   function exportReport() {
     const text = form.reports.map((item) => `${item.shot_label}｜${item.category}｜${item.severity}｜${item.issue}｜建议：${item.suggestion}`).join("\n");
     setForm((current) => ({ ...current, export_text: text || "暂无质检问题", validation_report: form.reports.some((item) => item.status !== "passed") ? "仍有未通过素材，视频生成将默认拦截。" : "质检已全部通过，可进入视频生成。" }));
-    void navigator.clipboard?.writeText(text || "暂无质检问题");
-    setStatusMessage("质检报告已复制");
+    void copyTextToClipboard(text || "暂无质检问题", "质检报告已复制", setStatusMessage);
   }
 
   async function handleSave() {
@@ -4208,7 +4221,7 @@ function StepSevenSection({
             <div className="action-row">
               <button className="ghost-mini-button" type="button" onClick={() => createReworkTask(report)}>生成返工</button>
               <button className="ghost-mini-button" type="button" onClick={() => markPassed(report.id)}>标记通过</button>
-              <button className="ghost-mini-button" type="button" onClick={() => { void navigator.clipboard?.writeText(report.repair_prompt); setStatusMessage("返工 prompt 已复制"); }}>复制建议</button>
+              <button className="ghost-mini-button" type="button" onClick={() => void copyTextToClipboard(report.repair_prompt, "返工 prompt 已复制", setStatusMessage)}>复制建议</button>
             </div>
           </article>
         ))}
@@ -4653,8 +4666,7 @@ function StepElevenSection({
 
   function exportReview() {
     const text = [form.publish_copy, form.review_report, form.next_episode_suggestions].filter(Boolean).join("\n\n");
-    void navigator.clipboard?.writeText(text || "暂无复盘内容");
-    setStatusMessage("发布复盘报告已复制");
+    void copyTextToClipboard(text || "暂无复盘内容", "发布复盘报告已复制", setStatusMessage);
   }
 
   async function handleSave() {
