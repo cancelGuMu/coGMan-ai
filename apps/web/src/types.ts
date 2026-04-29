@@ -41,6 +41,15 @@ export type StoryRelationship = {
   conflict: string;
 };
 
+export type ContinuityIssue = {
+  id: string;
+  episode_number: number;
+  severity: "low" | "medium" | "high";
+  issue: string;
+  suggestion: string;
+  status: "open" | "fixed";
+};
+
 export type StepOneData = {
   project_name: string;
   genre: string;
@@ -59,6 +68,8 @@ export type StepOneData = {
   relationship_notes: string;
   relationships: StoryRelationship[];
   season_outline: string;
+  continuity_report: string;
+  continuity_issues: ContinuityIssue[];
   season_episode_count: string;
   custom_episode_count: number | null;
   imported_story_name: string | null;
@@ -74,17 +85,35 @@ export type RewriteToolState = {
   rewrite_prompt: string;
 };
 
+export type ScriptRhythmNode = {
+  id: string;
+  label: string;
+  description: string;
+  emotion_intensity: number;
+};
+
+export type ScriptVersionRecord = {
+  id: string;
+  title: string;
+  snapshot: string;
+  created_at: string;
+};
+
 export type StepTwoData = {
   project_name: string;
   project_status: string;
   body_readiness: number;
   script_status: string;
   last_modified_by: string;
+  selected_episode_number: number;
+  current_episode_context: string;
   source_material: string;
   imported_source_name: string | null;
   reference_text: string;
   novel_text: string;
   imported_novel_name: string | null;
+  terminology_import_name: string | null;
+  guidance_import_name: string | null;
   character_profiles: string;
   terminology_library: string;
   writing_guidance: string;
@@ -92,7 +121,41 @@ export type StepTwoData = {
   script_text: string;
   review_notes: string;
   rewrite_tool: RewriteToolState;
+  rhythm_nodes: ScriptRhythmNode[];
+  version_records: ScriptVersionRecord[];
   modification_records: string[];
+};
+
+export type AssetCharacter = {
+  id: string;
+  name: string;
+  role: string;
+  appearance: string;
+  motivation: string;
+};
+
+export type AssetScene = {
+  id: string;
+  name: string;
+  location: string;
+  atmosphere: string;
+  episodes: string;
+};
+
+export type AssetProp = {
+  id: string;
+  name: string;
+  type: string;
+  story_function: string;
+};
+
+export type StepThreeData = {
+  characters: AssetCharacter[];
+  scenes: AssetScene[];
+  props: AssetProp[];
+  style_board: string;
+  reference_notes: string;
+  consistency_rules: string;
 };
 
 export type ProjectSummary = {
@@ -117,6 +180,7 @@ export type ProjectRecord = {
   current_step: StepId;
   step_one: StepOneData;
   step_two: StepTwoData;
+  step_three: StepThreeData;
 };
 
 export type GeneratedTextResponse = {

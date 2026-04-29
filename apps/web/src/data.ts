@@ -1,6 +1,7 @@
 import type {
   ProjectRecord,
   StepCompletionStatus,
+  StepThreeData,
   StepId,
   StepOneData,
   StepTwoData,
@@ -187,6 +188,8 @@ export function defaultStepOneData(projectName = ""): StepOneData {
     relationship_notes: "",
     relationships: [],
     season_outline: "",
+    continuity_report: "",
+    continuity_issues: [],
     season_episode_count: "12集",
     custom_episode_count: null,
     imported_story_name: null,
@@ -208,11 +211,15 @@ export function defaultStepTwoData(projectName = ""): StepTwoData {
     body_readiness: 0,
     script_status: "未生成",
     last_modified_by: "人工",
+    selected_episode_number: 1,
+    current_episode_context: "",
     source_material: "",
     imported_source_name: null,
     reference_text: "",
     novel_text: "",
     imported_novel_name: null,
+    terminology_import_name: null,
+    guidance_import_name: null,
     character_profiles: "",
     terminology_library: "",
     writing_guidance: "",
@@ -225,13 +232,27 @@ export function defaultStepTwoData(projectName = ""): StepTwoData {
       selection_text: "",
       rewrite_prompt: "",
     },
+    rhythm_nodes: [],
+    version_records: [],
     modification_records: [],
+  };
+}
+
+export function defaultStepThreeData(): StepThreeData {
+  return {
+    characters: [],
+    scenes: [],
+    props: [],
+    style_board: "",
+    reference_notes: "",
+    consistency_rules: "",
   };
 }
 
 export function mergeProjectDefaults(project: ProjectRecord): ProjectRecord {
   const stepOneDefaults = defaultStepOneData(project.name);
   const stepTwoDefaults = defaultStepTwoData(project.name);
+  const stepThreeDefaults = defaultStepThreeData();
 
   return {
     ...project,
@@ -249,7 +270,13 @@ export function mergeProjectDefaults(project: ProjectRecord): ProjectRecord {
         ...stepTwoDefaults.rewrite_tool,
         ...project.step_two.rewrite_tool,
       },
+      rhythm_nodes: project.step_two.rhythm_nodes ?? stepTwoDefaults.rhythm_nodes,
+      version_records: project.step_two.version_records ?? stepTwoDefaults.version_records,
       modification_records: project.step_two.modification_records ?? [],
+    },
+    step_three: {
+      ...stepThreeDefaults,
+      ...(project.step_three ?? stepThreeDefaults),
     },
   };
 }

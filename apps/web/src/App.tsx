@@ -7,6 +7,7 @@ import {
   LoadingSkeleton,
   NextStepButton,
   StepStatusDot,
+  ThreeColumnWorkbench,
   VersionHistoryPanel,
   type VersionRecord,
 } from "./components";
@@ -32,6 +33,7 @@ import type {
   EpisodeDraft,
   ProjectRecord,
   ProjectSummary,
+  ScriptRhythmNode,
   StepCompletionStatus,
   StepOneData,
   StepTwoData,
@@ -2150,7 +2152,9 @@ function CreativeWorkspaceContent({
           />
         ) : null}
 
-        {activeStep.id !== "story-structure" && activeStep.id !== "script-creation" ? (
+        {activeStep.id === "asset-setting" ? <StepThreeSection project={project} /> : null}
+
+        {activeStep.id !== "story-structure" && activeStep.id !== "script-creation" && activeStep.id !== "asset-setting" ? (
           <article className="placeholder-card single-step-page" id={activeStep.id}>
             <div className="placeholder-badge">{activeStep.label}</div>
             <h3>{activeStep.label.replace(/^\d+\s*/, "")}</h3>
@@ -2415,6 +2419,76 @@ function StepOneSection({
     }
   }
 
+  function generateWorldDraft() {
+    const seed = form.core_story_idea || form.genre || "当前故事";
+    updateForm({
+      ...form,
+      world_background: form.world_background || `围绕“${seed.slice(0, 42)}”建立一个规则清晰、冲突外显的故事世界。`,
+      era_setting: form.era_setting || "近未来都市与隐秘组织并存的架空时代",
+      rule_system: form.rule_system || "核心能力需要代价，资源稀缺，组织规则与个人选择持续冲突。",
+      conflict_environment: form.conflict_environment || "主角被迫在公众秩序、个人执念和隐藏真相之间做选择。",
+    });
+    setStatusMessage("已生成世界观草稿，可继续编辑。");
+  }
+
+  function generateMainlineDraft() {
+    updateForm({
+      ...form,
+      protagonist_goal: form.protagonist_goal || "主角需要找到真相并保护重要关系。",
+      antagonist_pressure: form.antagonist_pressure || "对立力量持续制造误导、资源封锁和关系离间。",
+      core_conflict: form.core_conflict || "个人选择与既定秩序之间的冲突贯穿全季。",
+      character_growth: form.character_growth || "主角从被动卷入成长为主动承担代价的行动者。",
+    });
+    setStatusMessage("已生成主线目标草稿。");
+  }
+
+  function generateRelationshipDraft() {
+    updateForm({
+      ...form,
+      relationship_notes:
+        form.relationship_notes ||
+        "主角、同盟、对手和隐藏推动者之间形成多层关系：表面合作，暗线试探，关键节点反转。",
+      relationships: form.relationships.length
+        ? form.relationships
+        : [
+            {
+              id: `rel-${Date.now()}-a`,
+              character_a: "主角",
+              character_b: "同盟",
+              relationship: "互补搭档",
+              conflict: "目标一致但方法冲突",
+            },
+            {
+              id: `rel-${Date.now()}-b`,
+              character_a: "主角",
+              character_b: "反派",
+              relationship: "价值对立",
+              conflict: "围绕真相与秩序展开正面对抗",
+            },
+          ],
+    });
+    setStatusMessage("已生成人物关系草稿。");
+  }
+
+  function generateContinuityReport() {
+    const emptyEpisodes = form.episodes.filter((episode) => !episode.content.trim());
+    updateForm({
+      ...form,
+      continuity_report: emptyEpisodes.length
+        ? `连续性检查：还有 ${emptyEpisodes.length} 集缺少核心事件，建议先补齐再进入剧本创作。`
+        : "连续性检查：当前单集大纲均已填写，可进入剧本创作前复核节奏与钩子。",
+      continuity_issues: emptyEpisodes.slice(0, 4).map((episode) => ({
+        id: `issue-${episode.episode_number}`,
+        episode_number: episode.episode_number,
+        severity: "medium",
+        issue: `第 ${episode.episode_number} 集缺少核心事件`,
+        suggestion: "补充本集目标、冲突和结尾钩子。",
+        status: "open",
+      })),
+    });
+    setStatusMessage("连续性检查已生成。");
+  }
+
   return (
     <section className="editor-section" id="story-structure">
       <div className="section-headline">
@@ -2548,6 +2622,9 @@ function StepOneSection({
       <div className="story-foundation-grid">
         <div className="panel-card">
           <h3>世界观编辑</h3>
+          <button className="ghost-button inline-button" type="button" onClick={generateWorldDraft}>
+            生成世界观草稿
+          </button>
           <label className="field-label">
             <span>世界背景</span>
             <textarea rows={4} value={form.world_background} onChange={(event) => updateForm({ ...form, world_background: event.target.value })} placeholder="描述故事发生的世界、地域、社会结构。" />
@@ -2568,6 +2645,9 @@ function StepOneSection({
 
         <div className="panel-card">
           <h3>主线目标</h3>
+          <button className="ghost-button inline-button" type="button" onClick={generateMainlineDraft}>
+            生成主线目标
+          </button>
           <label className="field-label">
             <span>主角目标</span>
             <textarea rows={3} value={form.protagonist_goal} onChange={(event) => updateForm({ ...form, protagonist_goal: event.target.value })} placeholder="主角想得到什么、守护什么或改变什么。" />
@@ -2588,6 +2668,9 @@ function StepOneSection({
 
         <div className="panel-card">
           <h3>人物关系</h3>
+          <button className="ghost-button inline-button" type="button" onClick={generateRelationshipDraft}>
+            生成人物关系
+          </button>
           <label className="field-label">
             <span>关系说明</span>
             <textarea rows={5} value={form.relationship_notes} onChange={(event) => updateForm({ ...form, relationship_notes: event.target.value })} placeholder="用自然语言描述主要人物、阵营和关系张力。" />
@@ -2625,6 +2708,32 @@ function StepOneSection({
               <div className="hint-text">暂无结构化人物关系，可先填写关系说明。</div>
             )}
           </div>
+        </div>
+      </div>
+
+      <div className="panel-card continuity-card">
+        <div className="section-header compact-section-header">
+          <div>
+            <span className="section-header-eyebrow">Continuity</span>
+            <h2>连续性检查</h2>
+            <p>检查单集大纲是否存在缺口、重复和节奏断层。</p>
+          </div>
+          <button className="ghost-button inline-button" type="button" onClick={generateContinuityReport}>
+            生成连续性报告
+          </button>
+        </div>
+        <p className="continuity-report">{form.continuity_report || "暂无连续性报告，生成后会显示问题和建议。"}</p>
+        <div className="overview-list">
+          {form.continuity_issues.length ? (
+            form.continuity_issues.map((issue) => (
+              <div className="overview-item" key={issue.id}>
+                <strong>第 {issue.episode_number} 集 · {issue.severity}</strong>
+                <span>{issue.issue}，建议：{issue.suggestion}</span>
+              </div>
+            ))
+          ) : (
+            <div className="hint-text">暂无连续性问题。</div>
+          )}
         </div>
       </div>
 
@@ -2675,6 +2784,20 @@ function StepTwoSection({
 }) {
   const [form, setForm] = useState<StepTwoData>(project.step_two);
   const [saving, setSaving] = useState(false);
+  const selectedEpisode =
+    project.step_one.episodes.find((episode) => episode.episode_number === form.selected_episode_number) ??
+    project.step_one.episodes[0] ??
+    null;
+  const scriptVersions = useMemo<VersionRecord[]>(
+    () =>
+      form.version_records.map((version) => ({
+        id: version.id,
+        title: version.title,
+        description: version.snapshot.slice(0, 80) || "空版本快照",
+        created_at: version.created_at,
+      })),
+    [form.version_records]
+  );
 
   useEffect(() => {
     setForm(project.step_two);
@@ -2714,6 +2837,64 @@ function StepTwoSection({
     }));
   }
 
+  function addRhythmNode() {
+    const nextNode: ScriptRhythmNode = {
+      id: `rhythm-${Date.now()}`,
+      label: `节奏节点 ${form.rhythm_nodes.length + 1}`,
+      description: selectedEpisode ? `围绕第 ${selectedEpisode.episode_number} 集的钩子或反转补充节奏点。` : "补充爆点、反转或情绪节点。",
+      emotion_intensity: 70,
+    };
+    setForm((current) => ({
+      ...current,
+      rhythm_nodes: [...current.rhythm_nodes, nextNode],
+    }));
+  }
+
+  function formatScriptText(kind: "dialogue" | "narration" | "action") {
+    const prefix = kind === "dialogue" ? "【对白】" : kind === "narration" ? "【旁白】" : "【动作】";
+    setForm((current) => ({
+      ...current,
+      script_text: current.script_text
+        .split("\n")
+        .map((line) => (line.trim() ? `${prefix}${line.replace(/^【.*?】/, "")}` : line))
+        .join("\n"),
+      last_modified_by: "人工",
+    }));
+    appendModificationRecord(`完成${kind === "dialogue" ? "对白" : kind === "narration" ? "旁白" : "动作"}标记`, "人工");
+  }
+
+  function snapshotScriptVersion() {
+    setForm((current) => ({
+      ...current,
+      version_records: [
+        ...current.version_records,
+        {
+          id: `script-version-${Date.now()}`,
+          title: `${current.version_status} · ${new Date().toLocaleTimeString("zh-CN")}`,
+          snapshot: current.script_text,
+          created_at: new Date().toLocaleString("zh-CN"),
+        },
+      ],
+    }));
+    setStatusMessage("已保存当前剧本版本快照。");
+  }
+
+  function restoreScriptVersion(versionId: string) {
+    const version = form.version_records.find((item) => item.id === versionId);
+    if (!version) return;
+    setForm((current) => ({
+      ...current,
+      script_text: version.snapshot,
+      last_modified_by: "人工",
+    }));
+    setStatusMessage(`已恢复版本：${version.title}`);
+  }
+
+  function exportScriptText() {
+    void navigator.clipboard?.writeText(form.script_text);
+    setStatusMessage(form.script_text.trim() ? "剧本文本已复制到剪贴板。" : "剧本文本为空，暂无可导出内容。");
+  }
+
   async function applyGeneration(
     mode: string,
     setter: (content: string) => void,
@@ -2749,6 +2930,8 @@ function StepTwoSection({
       const nextData = {
         ...form,
         project_name: form.project_name || project.name,
+        current_episode_context:
+          selectedEpisode ? `第 ${selectedEpisode.episode_number} 集：${selectedEpisode.title}；${selectedEpisode.content}；钩子：${selectedEpisode.hook}` : "",
         last_modified_by: form.last_modified_by || "人工",
       };
       const saved = await saveStepTwo(project.id, nextData);
@@ -2778,6 +2961,39 @@ function StepTwoSection({
         </div>
       </div>
 
+      <div className="script-context-card panel-card">
+        <div className="field-row compact-row">
+          <label className="field-label">
+            <span>当前集数</span>
+            <select
+              value={form.selected_episode_number}
+              onChange={(event) => {
+                const episodeNumber = Number(event.target.value);
+                const episode = project.step_one.episodes.find((item) => item.episode_number === episodeNumber);
+                setForm({
+                  ...form,
+                  selected_episode_number: episodeNumber,
+                  current_episode_context: episode
+                    ? `第 ${episode.episode_number} 集：${episode.title}；${episode.content}；钩子：${episode.hook}`
+                    : "",
+                });
+              }}
+            >
+              {project.step_one.episodes.map((episode) => (
+                <option value={episode.episode_number} key={episode.episode_number}>
+                  第 {episode.episode_number} 集 {episode.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="episode-context-preview">
+            <strong>{selectedEpisode ? selectedEpisode.title : "暂无单集大纲"}</strong>
+            <span>{selectedEpisode ? selectedEpisode.content || "本集内容待填写" : "请先在步骤一补充单集大纲"}</span>
+            <em>{selectedEpisode?.hook ? `钩子：${selectedEpisode.hook}` : "暂无钩子"}</em>
+          </div>
+        </div>
+      </div>
+
       <div className="step-two-layout">
         <div className="panel-card">
           <h3>模块 A：创作工具区</h3>
@@ -2797,10 +3013,7 @@ function StepTwoSection({
           </label>
 
           <div className="action-row">
-            <label className="ghost-button inline-button">
-              导入素材文件
-              <input type="file" accept=".txt,.md,.json,.docx" onChange={(event) => handleImport("source", event)} hidden />
-            </label>
+            <ImportFileButton label="导入素材文件" filename={form.imported_source_name} accept=".txt,.md,.json,.docx" onChange={(event) => handleImport("source", event)} />
             <button
               className="ghost-button inline-button"
               type="button"
@@ -2881,10 +3094,7 @@ function StepTwoSection({
             />
           </label>
           <div className="action-row">
-            <label className="ghost-button inline-button">
-              导入正文文件
-              <input type="file" accept=".txt,.md,.docx" onChange={(event) => handleImport("novel", event)} hidden />
-            </label>
+            <ImportFileButton label="导入正文文件" filename={form.imported_novel_name} onChange={(event) => handleImport("novel", event)} />
             <button
               className="ghost-button inline-button"
               type="button"
@@ -3059,6 +3269,15 @@ function StepTwoSection({
             >
               生成剧本
             </button>
+            <button className="ghost-button inline-button" type="button" onClick={() => formatScriptText("dialogue")}>
+              对白格式化
+            </button>
+            <button className="ghost-button inline-button" type="button" onClick={() => formatScriptText("narration")}>
+              旁白标记
+            </button>
+            <button className="ghost-button inline-button" type="button" onClick={() => formatScriptText("action")}>
+              动作标记
+            </button>
             <button
               className="ghost-button inline-button"
               type="button"
@@ -3081,7 +3300,6 @@ function StepTwoSection({
               rows={10}
               value={form.script_text}
               onChange={(event) => {
-                setForm({ ...form, script_text: event.target.value, last_modified_by: "人工" });
                 setForm((current) => ({
                   ...current,
                   script_text: event.target.value,
@@ -3091,6 +3309,26 @@ function StepTwoSection({
               placeholder="剧本文本编辑"
             />
           </label>
+          <div className="script-rhythm-panel">
+            <div className="rewrite-head">
+              <h4>节奏节点</h4>
+              <button className="ghost-button inline-button" type="button" onClick={addRhythmNode}>
+                新增节点
+              </button>
+            </div>
+            <div className="overview-list">
+              {form.rhythm_nodes.length ? (
+                form.rhythm_nodes.map((node) => (
+                  <div className="overview-item" key={node.id}>
+                    <strong>{node.label} · 情绪 {node.emotion_intensity}</strong>
+                    <span>{node.description}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="hint-text">暂无节奏节点，可新增爆点、反转、钩子或情绪强度。</div>
+              )}
+            </div>
+          </div>
           <label className="field-label">
             <span>整集审核意见</span>
             <textarea
@@ -3111,9 +3349,12 @@ function StepTwoSection({
             <button
               className="ghost-button inline-button"
               type="button"
-              onClick={() => setStatusMessage("导出剧本接口已预留，后续可接入真实文件导出流程")}
+              onClick={exportScriptText}
             >
               导出剧本
+            </button>
+            <button className="ghost-button inline-button" type="button" onClick={snapshotScriptVersion}>
+              保存版本
             </button>
             <button
               className={`ghost-button inline-button ${canGoStepThree ? "strong" : "disabled"}`}
@@ -3125,6 +3366,11 @@ function StepTwoSection({
               进入步骤三
             </button>
           </div>
+
+          <VersionHistoryPanel
+            versions={scriptVersions}
+            onRestore={(version) => restoreScriptVersion(version.id)}
+          />
 
           <div className="modification-log">
             <h4>修改记录</h4>
@@ -3140,6 +3386,77 @@ function StepTwoSection({
           </div>
         </div>
       </div>
+    </section>
+  );
+}
+
+function StepThreeSection({ project }: { project: ProjectRecord }) {
+  const assetLibrary = project.step_three;
+  const summaryCards = [
+    { label: "角色", value: assetLibrary.characters.length, hint: "角色卡、外貌、动机" },
+    { label: "场景", value: assetLibrary.scenes.length, hint: "地点、氛围、出现集数" },
+    { label: "道具", value: assetLibrary.props.length, hint: "剧情作用、归属关系" },
+  ];
+
+  return (
+    <section className="editor-section" id="asset-setting">
+      <div className="section-headline">
+        <div>
+          <span className="eyebrow">步骤三</span>
+          <h2>资产设定</h2>
+          <p>资产库结构、后端存储字段和页面骨架已建立，后续可继续接入剧本资产提取与角色/场景/道具编辑。</p>
+        </div>
+        <div className="chip-row">
+          <span className="ghost-chip">角色 {assetLibrary.characters.length}</span>
+          <span className="ghost-chip">场景 {assetLibrary.scenes.length}</span>
+          <span className="ghost-chip">道具 {assetLibrary.props.length}</span>
+        </div>
+      </div>
+
+      <ThreeColumnWorkbench
+        className="asset-workbench"
+        left={
+          <div className="panel-card asset-rail-card">
+            <h3>资产分类</h3>
+            {summaryCards.map((card) => (
+              <div className="asset-category-row" key={card.label}>
+                <strong>{card.label}</strong>
+                <span>{card.value} 项</span>
+                <em>{card.hint}</em>
+              </div>
+            ))}
+          </div>
+        }
+        center={
+          <div className="panel-card">
+            <h3>待提取资产候选</h3>
+            <p className="asset-empty-copy">
+              当前步骤三已经具备页面骨架和数据入口。下一批任务将从剧本文本中提取角色、场景、道具候选，并允许勾选加入资产库。
+            </p>
+            <div className="asset-placeholder-grid">
+              {["角色候选", "场景候选", "道具候选", "风格板"].map((item) => (
+                <div className="overview-item" key={item}>
+                  <strong>{item}</strong>
+                  <span>等待从剧本和故事架构中提取。</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        }
+        right={
+          <div className="panel-card">
+            <h3>风格与一致性</h3>
+            <label className="field-label">
+              <span>风格板</span>
+              <textarea value={assetLibrary.style_board} readOnly placeholder="后续用于记录画风、色彩、光影、镜头质感。" />
+            </label>
+            <label className="field-label">
+              <span>一致性规则</span>
+              <textarea value={assetLibrary.consistency_rules} readOnly placeholder="后续用于记录角色、服装、场景等锁定规则。" />
+            </label>
+          </div>
+        }
+      />
     </section>
   );
 }
