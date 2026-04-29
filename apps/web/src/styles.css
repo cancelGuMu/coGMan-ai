@@ -653,6 +653,7 @@ select:focus {
 }
 
 .hero-visual {
+  --hero-preview-scale: 1;
   position: relative;
   min-width: 0;
   padding: 24px 0 90px;
@@ -669,7 +670,8 @@ select:focus {
 
 .hero-preview-shell {
   position: relative;
-  width: min(100%, 1200px);
+  width: 1120px;
+  max-width: 100%;
   transform-style: preserve-3d;
   transition: transform 320ms ease;
 }
@@ -683,9 +685,10 @@ select:focus {
   display: grid;
   grid-template-columns: 124px minmax(0, 1.28fr) 168px;
   gap: 16px;
-  width: min(100%, 1120px);
+  width: 1120px;
   min-height: 648px;
   padding: 18px;
+  zoom: var(--hero-preview-scale);
   border-radius: 42px;
   border: 1px solid rgba(255, 228, 168, 0.16);
   background:
@@ -3584,10 +3587,15 @@ select:focus {
     gap: 30px;
   }
 
+  .hero-visual {
+    --hero-preview-scale: 0.84;
+  }
+
+  .hero-preview-shell {
+    max-width: none;
+  }
+
   .hero-preview-page {
-    grid-template-columns: 132px minmax(0, 1fr) 168px;
-    min-height: 620px;
-    padding: 18px;
     transform: rotateY(-8deg) rotateX(2deg) rotateZ(-0.25deg) translateZ(6px);
   }
 }
@@ -3615,7 +3623,7 @@ select:focus {
   }
 
   .hero-layout {
-    grid-template-columns: minmax(0, 0.92fr) minmax(420px, 0.84fr);
+    grid-template-columns: minmax(0, 0.98fr) minmax(0, 620px);
     min-height: auto;
     align-items: start;
     gap: 24px;
@@ -3670,7 +3678,8 @@ select:focus {
   }
 
   .hero-visual {
-    max-width: 760px;
+    --hero-preview-scale: 0.62;
+    max-width: 720px;
     margin: 0 auto;
     padding: 18px 0 44px;
     perspective-origin: 28% 42%;
@@ -3678,7 +3687,8 @@ select:focus {
   }
 
   .hero-preview-shell {
-    width: min(100%, 720px);
+    width: 1120px;
+    max-width: none;
   }
 
   .hero-stats-grid,
@@ -3719,23 +3729,21 @@ select:focus {
   }
 
   .hero-preview-page {
-    grid-template-columns: 108px minmax(0, 1fr);
-    min-height: auto;
-    gap: 12px;
-    padding: 14px;
+    grid-template-columns: 124px minmax(0, 1.28fr) 168px;
+    min-height: 648px;
+    gap: 16px;
+    padding: 18px;
     transform: none;
   }
 
   .preview-rail-panel {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    align-items: start;
-    padding: 16px;
+    grid-column: auto;
+    display: flex;
+    padding: 12px;
   }
 
   .preview-rail-head {
-    grid-column: span 1;
+    grid-column: auto;
   }
 
   .preview-role-card {
@@ -3803,8 +3811,9 @@ select:focus {
   }
 
   .hero-layout {
+    grid-template-columns: 1fr;
     min-height: auto;
-    gap: 28px;
+    gap: 26px;
   }
 
   .hero-left h1,
@@ -3827,6 +3836,16 @@ select:focus {
 
   .hero-stats-wrap {
     margin-top: 8px;
+  }
+
+  .hero-visual {
+    --hero-preview-scale: 0.78;
+    max-width: min(100%, 900px);
+  }
+
+  .hero-preview-shell {
+    width: 1120px;
+    max-width: none;
   }
 
   .hero-preview-shell:hover {
@@ -3955,10 +3974,23 @@ select:focus {
 
   .hero-preview-page {
     grid-template-columns: 1fr;
+    width: 100%;
     padding: 16px;
     min-height: auto;
     border-radius: 28px;
     transform: none;
+    zoom: 1;
+  }
+
+  .hero-visual {
+    --hero-preview-scale: 1;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .hero-preview-shell {
+    width: 100%;
+    max-width: 100%;
   }
 
   .preview-sidebar-panel,
