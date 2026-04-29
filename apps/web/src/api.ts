@@ -8,6 +8,8 @@ import type {
   DashboardTrendPoint,
   DeleteProjectResponse,
   GeneratedTextResponse,
+  GeneratedImageResponse,
+  GeneratedVideoResponse,
   ProjectRecord,
   ProjectSummary,
   StepEightData,
@@ -187,6 +189,34 @@ export async function generateStepTwoContent(
     method: "POST",
     body: JSON.stringify({ project_name: projectName, prompt, mode }),
   });
+}
+
+export async function generateImageCandidate(input: {
+  prompt: string;
+  shot_id: string;
+  shot_label: string;
+}): Promise<GeneratedImageResponse> {
+  return request<GeneratedImageResponse>("/api/generate/image", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function generateVideoCandidate(input: {
+  prompt: string;
+  shot_id: string;
+  shot_label: string;
+  source_image_url?: string | null;
+  duration_seconds: number;
+}): Promise<GeneratedVideoResponse> {
+  return request<GeneratedVideoResponse>("/api/generate/video", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function fetchVideoTaskStatus(taskId: string): Promise<{ task: Record<string, unknown> }> {
+  return request<{ task: Record<string, unknown> }>(`/api/generate/video/${encodeURIComponent(taskId)}`);
 }
 
 export async function importTextFile(file: File): Promise<{ filename: string; content: string }> {

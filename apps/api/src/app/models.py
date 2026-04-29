@@ -532,3 +532,37 @@ class GeneratedTextResponse(BaseModel):
     content: str
     updated_by: str = "AI"
     record: str
+
+
+class ImageGenerationRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=12000)
+    shot_id: str = ""
+    shot_label: str = ""
+
+
+class GeneratedImageResponse(BaseModel):
+    url: str
+    prompt: str
+    provider: str
+    model: str
+    metadata: str = ""
+
+
+class VideoGenerationRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=12000)
+    shot_id: str = ""
+    shot_label: str = ""
+    source_image_url: str | None = None
+    duration_seconds: int = 6
+
+
+class GeneratedVideoResponse(BaseModel):
+    task_id: str
+    provider: str
+    model: str
+    status: str
+    metadata: str = ""
+
+
+class VideoTaskStatusResponse(BaseModel):
+    task: dict

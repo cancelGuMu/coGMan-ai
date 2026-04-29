@@ -17,8 +17,11 @@ import {
   fetchDashboardOverview,
   fetchProject,
   fetchProjects,
+  fetchVideoTaskStatus,
+  generateImageCandidate,
   generateStepOneOutline,
   generateStepTwoContent,
+  generateVideoCandidate,
   importTextFile,
   renameProject,
   saveStepEight,
@@ -3986,42 +3989,78 @@ function StepSixSection({
   useEffect(() => setForm(project.step_six), [project.step_six]);
   const selectedCount = form.candidates.filter((item) => item.status === "selected" || item.status === "first-frame" || item.status === "keyframe").length;
 
-  function generateImages(scope: "single" | "batch") {
+  async function generateImages(scope: "single" | "batch") {
     const prompts = project.step_five.prompts.length ? project.step_five.prompts : [];
     const targets = scope === "single" ? prompts.slice(0, 1) : prompts;
-    const candidates = targets.flatMap((prompt, index) =>
-      [0, 1].map((variant) => ({
-        id: `img-${prompt.id}-${variant}-${Date.now()}`,
-        shot_id: prompt.shot_id,
-        shot_label: prompt.shot_label,
-        url: `/images/hero-role-rin.png`,
-        prompt: prompt.t2i_prompt || prompt.i2v_prompt,
-        status: index === 0 && variant === 0 ? "first-frame" as const : "candidate" as const,
-        metadata: `${prompt.parameters}；候选 ${variant + 1}`,
-        repaint_prompt: "",
-      }))
-    );
-    setForm((current) => ({ ...current, candidates: [...current.candidates, ...candidates] }));
+    if (!targets.length) {
+      setStatusMessage("请先在步骤五生成 T2I 提示词。");
+      return;
+    }
+    setStatusMessage(`正在调用 gpt-image-2 生成 ${targets.length} 张图片...`);
+    try {
+      const candidates: ImageCandidate[] = [];
+      for (let index = 0; index < targets.length; index += 1) {
+        const prompt = targets[index];
+        const promptText = prompt.t2i_prompt || prompt.i2v_prompt;
+        if (!promptText.trim()) {
+          continue;
+        }
+        const result = await generateImageCandidate({
+          prompt: promptText,
+          shot_id: prompt.shot_id,
+          shot_label: prompt.shot_label,
+        });
+        candidates.push({
+          id: `img-${prompt.id}-${Date.now()}-${index}`,
+          shot_id: prompt.shot_id,
+          shot_label: prompt.shot_label,
+          url: result.url,
+          prompt: result.prompt,
+          status: index === 0 ? "first-frame" as const : "candidate" as const,
+          metadata: `${result.provider} / ${result.model}；${result.metadata || prompt.parameters}`,
+          repaint_prompt: "",
+        });
+      }
+      if (!candidates.length) {
+        setStatusMessage("没有可用于生图的提示词。");
+        return;
+      }
+      setForm((current) => ({ ...current, candidates: [...current.candidates, ...candidates] }));
+      setStatusMessage(`已生成 ${candidates.length} 张图片候选。`);
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "图片生成失败");
+    }
   }
 
-  function regenerateShot(shotId: string) {
+  async function regenerateShot(shotId: string) {
     const prompt = project.step_five.prompts.find((item) => item.shot_id === shotId);
     if (!prompt) {
       setStatusMessage("没有找到该镜头的提示词");
       return;
     }
-    const candidate: ImageCandidate = {
-      id: `img-reg-${shotId}-${Date.now()}`,
-      shot_id: shotId,
-      shot_label: prompt.shot_label,
-      url: "/images/hero-stage-main.png",
-      prompt: prompt.t2i_prompt || prompt.i2v_prompt,
-      status: "candidate",
-      metadata: `${prompt.parameters}；重新生成版本`,
-      repaint_prompt: form.repaint_prompt,
-    };
-    setForm((current) => ({ ...current, candidates: [...current.candidates, candidate] }));
-    setStatusMessage("已追加重新生成候选图，未覆盖已入选素材");
+    const promptText = form.repaint_prompt || prompt.t2i_prompt || prompt.i2v_prompt;
+    setStatusMessage("正在重新生成候选图...");
+    try {
+      const result = await generateImageCandidate({
+        prompt: promptText,
+        shot_id: shotId,
+        shot_label: prompt.shot_label,
+      });
+      const candidate: ImageCandidate = {
+        id: `img-reg-${shotId}-${Date.now()}`,
+        shot_id: shotId,
+        shot_label: prompt.shot_label,
+        url: result.url,
+        prompt: result.prompt,
+        status: "candidate",
+        metadata: `${result.provider} / ${result.model}；重新生成版本`,
+        repaint_prompt: form.repaint_prompt,
+      };
+      setForm((current) => ({ ...current, candidates: [...current.candidates, candidate] }));
+      setStatusMessage("已追加重新生成候选图，未覆盖已入选素材");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "重新生成图片失败");
+    }
   }
 
   function applyRepaint(imageId: string) {
@@ -4075,8 +4114,8 @@ function StepSixSection({
           <option value="候选">候选</option>
           <option value="关键帧">关键帧</option>
         </select>
-        <button className="primary-pill inline-pill" type="button" onClick={() => generateImages("batch")}>批量生成图片</button>
-        <button className="ghost-button inline-button" type="button" onClick={() => generateImages("single")}>单镜生成</button>
+        <button className="primary-pill inline-pill" type="button" onClick={() => void generateImages("batch")}>批量生成图片</button>
+        <button className="ghost-button inline-button" type="button" onClick={() => void generateImages("single")}>单镜生成</button>
         <button className="ghost-button inline-button" type="button" onClick={validateSelectedPackage}>进入质检校验</button>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存候选图"}</button>
       </div>
@@ -4096,7 +4135,7 @@ function StepSixSection({
               <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "keyframe" } : item) }))}>关键帧</button>
               <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "selected" } : item) }))}>入选</button>
               <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "discarded" } : item) }))}>废弃</button>
-              <button className="ghost-mini-button" type="button" onClick={() => regenerateShot(image.shot_id)}>重生成</button>
+              <button className="ghost-mini-button" type="button" onClick={() => void regenerateShot(image.shot_id)}>重生成</button>
               <button className="ghost-mini-button" type="button" onClick={() => applyRepaint(image.id)}>局部重绘</button>
               <button className="ghost-mini-button" type="button" onClick={() => void copyTextToClipboard(image.prompt, "图片提示词已复制", setStatusMessage)}>复制词</button>
             </div>
@@ -4246,26 +4285,48 @@ function StepEightSection({
   const usableImages = project.step_six.candidates.filter((item) => item.status === "selected" || item.status === "first-frame" || item.status === "keyframe");
   const visibleClips = form.clips.filter((item) => !form.filter_text || item.shot_label.includes(form.filter_text) || item.status.includes(form.filter_text));
 
-  function generateVideos(scope: "single" | "batch") {
+  async function generateVideos(scope: "single" | "batch") {
     const sourceImages = usableImages.filter((image) => !project.step_seven.reports.some((report) => report.asset_id === image.id && report.status !== "passed"));
     const targets = scope === "single" ? sourceImages.slice(0, 1) : sourceImages;
-    const clips: VideoClipItem[] = targets.map((image, index) => ({
-      id: `clip-${image.id}-${Date.now()}-${index}`,
-      shot_id: image.shot_id,
-      shot_label: image.shot_label,
-      source_image_id: image.id,
-      url: "/images/hero-stage-main.png",
-      duration_seconds: project.step_four.shots.find((shot) => shot.id === image.shot_id)?.duration_seconds ?? 6,
-      motion_prompt: `${form.motion_settings}；${image.prompt}`,
-      reference_note: form.reference_bindings || `首帧绑定：${image.id}`,
-      status: "candidate",
-      fail_reason: "",
-      regeneration_strategy: "缩短时长、保持首帧、降低动作幅度",
-      version: `v${form.clips.length + index + 1}`,
-      metadata: `来源图片：${image.id}；通过质检报告 ${passedReports.length} 条`,
-    }));
-    setForm((current) => ({ ...current, clips: [...current.clips, ...clips], selected_clip_id: clips[0]?.id ?? current.selected_clip_id }));
-    setStatusMessage(`已生成 ${clips.length} 条视频候选记录`);
+    if (!targets.length) {
+      setStatusMessage("请先在步骤六生成并选择通过质检的关键帧。");
+      return;
+    }
+    setStatusMessage(`正在提交 ${targets.length} 个 MiniMax 视频生成任务...`);
+    try {
+      const clips: VideoClipItem[] = [];
+      for (let index = 0; index < targets.length; index += 1) {
+        const image = targets[index];
+        const duration = project.step_four.shots.find((shot) => shot.id === image.shot_id)?.duration_seconds ?? 6;
+        const motionPrompt = `${form.motion_settings}；${image.prompt}`;
+        const result = await generateVideoCandidate({
+          prompt: motionPrompt,
+          shot_id: image.shot_id,
+          shot_label: image.shot_label,
+          source_image_url: image.url.startsWith("http") ? image.url : null,
+          duration_seconds: duration,
+        });
+        clips.push({
+          id: `clip-${image.id}-${Date.now()}-${index}`,
+          shot_id: image.shot_id,
+          shot_label: image.shot_label,
+          source_image_id: image.id,
+          url: "",
+          duration_seconds: duration,
+          motion_prompt: motionPrompt,
+          reference_note: form.reference_bindings || `首帧绑定：${image.id}`,
+          status: "candidate",
+          fail_reason: "",
+          regeneration_strategy: "缩短时长、保持首帧、降低动作幅度",
+          version: `v${form.clips.length + index + 1}`,
+          metadata: `${result.provider} / ${result.model}；${result.metadata}；任务状态：${result.status}`,
+        });
+      }
+      setForm((current) => ({ ...current, clips: [...current.clips, ...clips], selected_clip_id: clips[0]?.id ?? current.selected_clip_id }));
+      setStatusMessage(`已提交 ${clips.length} 个 MiniMax 视频生成任务。`);
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "视频生成任务提交失败");
+    }
   }
 
   function updateClip(clipId: string, patch: Partial<VideoClipItem>) {
@@ -4283,6 +4344,37 @@ function StepEightSection({
     };
     setForm((current) => ({ ...current, clips: [...current.clips, next] }));
     setStatusMessage("已保留旧版本并追加重生成候选视频");
+  }
+
+  async function refreshClipTask(clip: VideoClipItem) {
+    const match = clip.metadata.match(/task_id=([^；\s]+)/);
+    const taskId = match?.[1];
+    if (!taskId) {
+      setStatusMessage("该视频记录没有 MiniMax task_id。");
+      return;
+    }
+    setStatusMessage("正在查询 MiniMax 视频任务状态...");
+    try {
+      const result = await fetchVideoTaskStatus(taskId);
+      const task = result.task;
+      const status = String(task.status ?? task.Status ?? "unknown");
+      const file = task.file as Record<string, unknown> | undefined;
+      const downloadUrl =
+        typeof file?.download_url === "string"
+          ? file.download_url
+          : typeof file?.url === "string"
+            ? file.url
+            : typeof task.video_url === "string"
+              ? task.video_url
+              : "";
+      updateClip(clip.id, {
+        url: downloadUrl || clip.url,
+        metadata: `${clip.metadata}；查询状态：${status}${downloadUrl ? "；已回填视频下载地址" : ""}`,
+      });
+      setStatusMessage(downloadUrl ? "视频任务已完成，已回填下载地址。" : `视频任务状态：${status}`);
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "视频任务查询失败");
+    }
   }
 
   function checkIntegrity() {
@@ -4316,8 +4408,8 @@ function StepEightSection({
       </div>
       <div className="action-row">
         <input value={form.filter_text} onChange={(event) => setForm({ ...form, filter_text: event.target.value })} placeholder="筛选镜头/状态" />
-        <button className="primary-pill inline-pill" type="button" onClick={() => generateVideos("batch")}>批量生成视频</button>
-        <button className="ghost-button inline-button" type="button" onClick={() => generateVideos("single")}>单镜视频</button>
+        <button className="primary-pill inline-pill" type="button" onClick={() => void generateVideos("batch")}>批量生成视频</button>
+        <button className="ghost-button inline-button" type="button" onClick={() => void generateVideos("single")}>单镜视频</button>
         <button className="ghost-button inline-button" type="button" onClick={checkIntegrity}>完整性检查</button>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存视频"}</button>
       </div>
@@ -4337,6 +4429,7 @@ function StepEightSection({
             <div className="action-row">
               <button className="ghost-mini-button" type="button" onClick={() => updateClip(clip.id, { status: "final" })}>设为最终</button>
               <button className="ghost-mini-button" type="button" onClick={() => updateClip(clip.id, { status: "failed", fail_reason: clip.fail_reason || "人工标记失败" })}>标记失败</button>
+              <button className="ghost-mini-button" type="button" onClick={() => void refreshClipTask(clip)}>查询状态</button>
               <button className="ghost-mini-button" type="button" onClick={() => regenerateClip(clip)}>重生成</button>
             </div>
           </article>

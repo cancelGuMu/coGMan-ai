@@ -465,6 +465,22 @@ export type GeneratedTextResponse = {
   record: string;
 };
 
+export type GeneratedImageResponse = {
+  url: string;
+  prompt: string;
+  provider: string;
+  model: string;
+  metadata: string;
+};
+
+export type GeneratedVideoResponse = {
+  task_id: string;
+  provider: string;
+  model: string;
+  status: string;
+  metadata: string;
+};
+
 export type DeleteProjectResponse = {
   success: boolean;
 };

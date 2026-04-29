@@ -8,8 +8,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .models import (
     CreateProjectRequest,
+    GeneratedImageResponse,
     GeneratedTextResponse,
+    GeneratedVideoResponse,
     GenerationRequest,
+    ImageGenerationRequest,
     ProjectDetailResponse,
     ProjectDeleteResponse,
     ProjectListResponse,
@@ -26,6 +29,16 @@ from .models import (
     SaveStepThreeRequest,
     SaveStepTwoRequest,
     UpdateProjectCoverRequest,
+    VideoGenerationRequest,
+    VideoTaskStatusResponse,
+)
+from .ai_services import (
+    AIServiceError,
+    create_minimax_video,
+    generate_deepseek_text,
+    generate_image,
+    query_minimax_video,
+    retrieve_minimax_file,
 )
 from .storage import (
     create_project,
@@ -332,39 +345,91 @@ def api_save_step_eleven(project_id: str, payload: SaveStepElevenRequest) -> Pro
 
 @app.post("/api/generate/step-one-season-outline", response_model=GeneratedTextResponse)
 def generate_step_one_outline(payload: GenerationRequest) -> GeneratedTextResponse:
-    base_story = payload.prompt.strip() or "一个从微光中成长的主角，踏上对抗命运的旅程。"
-    content = (
-        "第1集：主角在危机中觉醒，发现故事核心冲突。\n"
-        "第2集：关系线展开，初次行动遭遇反噬。\n"
-        "第3集：反派视角露出，钩出更大的世界观。\n\n"
-        f"核心故事基调：{base_story}"
+    prompt = (
+        "请为 coGMan-ai 的 AI 漫剧项目生成整季故事架构和单集大纲。"
+        "输出要包含每集标题、核心事件、爽点、钩子、反转和结尾悬念。\n\n"
+        f"{payload.prompt}"
     )
-    return GeneratedTextResponse(content=content, record="AI 生成季纲草案")
+    try:
+        content = generate_deepseek_text(payload.project_name, prompt, payload.mode or "outline")
+    except AIServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return GeneratedTextResponse(content=content, record="DeepSeek 生成季纲草案")
 
 
 @app.post("/api/generate/step-two", response_model=GeneratedTextResponse)
 def generate_step_two(payload: GenerationRequest) -> GeneratedTextResponse:
-    prompt = payload.prompt.strip() or "围绕主角突破、冲突升级和结尾反转展开。"
-    mapping = {
-        "reference": "参考文本方向：强化人物动机、升级情绪张力，并保持每一幕都有明确推动力。",
-        "novel": "小说正文样稿：夜色压低天幕，主角站在旧城楼顶，第一次意识到自己并不只是故事的旁观者。",
-        "roles": "角色画像：主角克制冷静但内心执拗，反派优雅克制且行动果决，辅助角色嘴硬心软。",
-        "terms": "术语库：源光、觉醒层级、星域协议、记忆锚点、镜界回廊。",
-        "guidance": "写作指导：每段对话尽量推动剧情或刻画关系，避免解释性独白过长。",
-        "script": "【场景一】天台夜风。\n主角望向远处光塔，低声说：'如果答案在那，我就自己去拿。'\n【场景二】警报响起，第一轮冲突爆发。",
-        "check": "一致性检查结果：角色动机基本统一，第二场景转场略快，建议补一段情绪承接。",
-    }
-    content = mapping.get(payload.mode, "AI 已根据你的输入生成内容。") + f"\n\n补充提示：{prompt}"
+    mode_instruction = {
+        "reference": "生成可供剧本创作参考的文本方向。",
+        "novel": "生成小说正文样稿。",
+        "roles": "从素材中提炼角色画像。",
+        "terms": "整理术语库。",
+        "guidance": "生成写作指导。",
+        "script": "生成可拆分镜头的正式漫剧剧本。",
+        "check": "做人物动机、称谓、设定、时间线和剧情承接的一致性检查。",
+    }.get(payload.mode, "生成当前步骤需要的文本内容。")
+    prompt = f"{mode_instruction}\n\n{payload.prompt}"
+    try:
+        content = generate_deepseek_text(payload.project_name, prompt, payload.mode)
+    except AIServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     label = {
-        "reference": "AI 生成参考文本",
-        "novel": "AI 生成小说正文",
-        "roles": "AI 生成角色画像",
-        "terms": "AI 生成术语库",
-        "guidance": "AI 生成写作指导",
-        "script": "AI 生成剧本",
-        "check": "AI 完成一致性检查",
-    }.get(payload.mode, "AI 生成内容")
+        "reference": "DeepSeek 生成参考文本",
+        "novel": "DeepSeek 生成小说正文",
+        "roles": "DeepSeek 生成角色画像",
+        "terms": "DeepSeek 生成术语库",
+        "guidance": "DeepSeek 生成写作指导",
+        "script": "DeepSeek 生成剧本",
+        "check": "DeepSeek 完成一致性检查",
+    }.get(payload.mode, "DeepSeek 生成内容")
     return GeneratedTextResponse(content=content, record=label)
+
+
+@app.post("/api/generate/image", response_model=GeneratedImageResponse)
+def api_generate_image(payload: ImageGenerationRequest) -> GeneratedImageResponse:
+    try:
+        result = generate_image(payload.prompt, payload.shot_label)
+    except AIServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return GeneratedImageResponse(
+        url=result["url"],
+        prompt=payload.prompt,
+        provider=result["provider"],
+        model=result["model"],
+        metadata=result.get("metadata", ""),
+    )
+
+
+@app.post("/api/generate/video", response_model=GeneratedVideoResponse)
+def api_generate_video(payload: VideoGenerationRequest) -> GeneratedVideoResponse:
+    duration = min(max(payload.duration_seconds, 1), 10)
+    try:
+        result = create_minimax_video(payload.prompt, payload.source_image_url, duration)
+    except AIServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    metadata = f"{payload.shot_label or '未命名镜头'}；MiniMax 已提交任务；task_id={result['task_id']}"
+    return GeneratedVideoResponse(
+        task_id=result["task_id"],
+        provider=result["provider"],
+        model=result["model"],
+        status=result["status"],
+        metadata=metadata,
+    )
+
+
+@app.get("/api/generate/video/{task_id}", response_model=VideoTaskStatusResponse)
+def api_get_video_task(task_id: str) -> VideoTaskStatusResponse:
+    try:
+        task = query_minimax_video(task_id)
+        file_id = task.get("file_id")
+        if isinstance(file_id, str) and file_id:
+            try:
+                task["file"] = retrieve_minimax_file(file_id)
+            except AIServiceError as file_exc:
+                task["file_error"] = str(file_exc)
+    except AIServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return VideoTaskStatusResponse(task=task)
 
 
 @app.post("/api/import/text")
