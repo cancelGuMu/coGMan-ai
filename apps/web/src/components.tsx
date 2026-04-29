@@ -197,28 +197,73 @@ export function AIGenerationButtonGroup({
   onStop,
   onCopyPrompt,
   disabled = false,
+  isGenerating = false,
+  generatingLabel = "AI 生成中",
 }: {
   onGenerate: () => void;
   onRegenerate?: () => void;
   onStop?: () => void;
   onCopyPrompt?: () => void;
   disabled?: boolean;
+  isGenerating?: boolean;
+  generatingLabel?: string;
 }) {
   return (
     <div className="ai-generation-button-group">
-      <button className="primary-pill inline-pill" type="button" onClick={onGenerate} disabled={disabled}>
-        生成
+      <button
+        className={`primary-pill inline-pill ai-action-button${isGenerating ? " is-generating" : ""}`}
+        type="button"
+        onClick={onGenerate}
+        disabled={disabled || isGenerating}
+        aria-busy={isGenerating}
+      >
+        {isGenerating ? <span className="ai-button-spinner" aria-hidden="true" /> : null}
+        {isGenerating ? generatingLabel : "生成"}
       </button>
-      <button className="ghost-button inline-button" type="button" onClick={onRegenerate ?? onGenerate} disabled={disabled}>
-        重新生成
+      <button
+        className="ghost-button inline-button"
+        type="button"
+        onClick={onRegenerate ?? onGenerate}
+        disabled={disabled || isGenerating}
+      >
+        {isGenerating ? "等待生成完成" : "重新生成"}
       </button>
-      <button className="ghost-button inline-button" type="button" onClick={onStop} disabled={!onStop || disabled}>
+      <button className="ghost-button inline-button" type="button" onClick={onStop} disabled={!onStop || disabled || !isGenerating}>
         停止
       </button>
-      <button className="ghost-button inline-button" type="button" onClick={onCopyPrompt} disabled={!onCopyPrompt}>
+      <button className="ghost-button inline-button" type="button" onClick={onCopyPrompt} disabled={!onCopyPrompt || isGenerating}>
         复制提示词
       </button>
     </div>
+  );
+}
+
+export function AIActionButton({
+  children,
+  loadingLabel = "AI 生成中",
+  isGenerating = false,
+  disabled = false,
+  className = "ghost-button inline-button",
+  onClick,
+}: {
+  children: ReactNode;
+  loadingLabel?: string;
+  isGenerating?: boolean;
+  disabled?: boolean;
+  className?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={`${className} ai-action-button${isGenerating ? " is-generating" : ""}`.trim()}
+      type="button"
+      onClick={onClick}
+      disabled={disabled || isGenerating}
+      aria-busy={isGenerating}
+    >
+      {isGenerating ? <span className="ai-button-spinner" aria-hidden="true" /> : null}
+      {isGenerating ? loadingLabel : children}
+    </button>
   );
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
+  AIActionButton,
   AIGenerationButtonGroup,
   DualColumnLayout,
   ImportFileButton,
@@ -2386,6 +2387,7 @@ function StepOneSection({
   const [form, setForm] = useState<StepOneData>(project.step_one);
   const [saving, setSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [aiGenerating, setAiGenerating] = useState(false);
 
   useEffect(() => {
     setForm(project.step_one);
@@ -2481,6 +2483,8 @@ function StepOneSection({
   }
 
   async function handleGenerateOutline() {
+    if (aiGenerating) return;
+    setAiGenerating(true);
     setStatusMessage("AI 正在生成季纲草案...");
     try {
       const chunks = buildStepOneChunks(form.core_story_idea);
@@ -2510,6 +2514,8 @@ function StepOneSection({
       setStatusMessage("AI 已生成季纲草案，你可以继续逐集编辑。");
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "AI 生成失败");
+    } finally {
+      setAiGenerating(false);
     }
   }
 
@@ -2693,6 +2699,8 @@ function StepOneSection({
           <div className="action-row">
             <AIGenerationButtonGroup
               onGenerate={() => void handleGenerateOutline()}
+              isGenerating={aiGenerating}
+              generatingLabel="季纲生成中"
               onCopyPrompt={() => {
                 void copyTextToClipboard(form.core_story_idea || "请基于项目设定生成季纲。", "已复制步骤一生成提示词", setStatusMessage);
               }}
@@ -2895,6 +2903,7 @@ function StepTwoSection({
 }) {
   const [form, setForm] = useState<StepTwoData>(project.step_two);
   const [saving, setSaving] = useState(false);
+  const [generatingMode, setGeneratingMode] = useState<string | null>(null);
   const selectedEpisode =
     project.step_one.episodes.find((episode) => episode.episode_number === form.selected_episode_number) ??
     project.step_one.episodes[0] ??
@@ -3015,6 +3024,8 @@ function StepTwoSection({
     successRecord: string,
     emptyMessage: string
   ) {
+    if (generatingMode) return;
+    setGeneratingMode(mode);
     setStatusMessage("AI 正在生成内容...");
     try {
       const chunks = buildStepTwoChunks(form);
@@ -3034,6 +3045,8 @@ function StepTwoSection({
       setStatusMessage("AI 生成完成");
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "AI 生成失败");
+    } finally {
+      setGeneratingMode(null);
     }
   }
 
@@ -3128,9 +3141,10 @@ function StepTwoSection({
 
           <div className="action-row">
             <ImportFileButton label="导入素材文件" filename={form.imported_source_name} accept=".txt,.md,.json,.docx" onChange={(event) => handleImport("source", event)} />
-            <button
-              className="ghost-button inline-button"
-              type="button"
+            <AIActionButton
+              isGenerating={generatingMode === "roles"}
+              disabled={Boolean(generatingMode)}
+              loadingLabel="角色抽取中"
               onClick={() =>
                 void applyGeneration(
                   "roles",
@@ -3141,10 +3155,11 @@ function StepTwoSection({
               }
             >
               角色抽取
-            </button>
-            <button
-              className="ghost-button inline-button"
-              type="button"
+            </AIActionButton>
+            <AIActionButton
+              isGenerating={generatingMode === "terms"}
+              disabled={Boolean(generatingMode)}
+              loadingLabel="术语生成中"
               onClick={() =>
                 void applyGeneration(
                   "terms",
@@ -3155,10 +3170,11 @@ function StepTwoSection({
               }
             >
               术语库生成
-            </button>
-            <button
-              className="ghost-button inline-button"
-              type="button"
+            </AIActionButton>
+            <AIActionButton
+              isGenerating={generatingMode === "guidance"}
+              disabled={Boolean(generatingMode)}
+              loadingLabel="指导生成中"
               onClick={() =>
                 void applyGeneration(
                   "guidance",
@@ -3169,7 +3185,7 @@ function StepTwoSection({
               }
             >
               写作指导生成
-            </button>
+            </AIActionButton>
           </div>
 
           <label className="field-label">
@@ -3369,9 +3385,11 @@ function StepTwoSection({
           </label>
 
           <div className="action-row">
-            <button
+            <AIActionButton
               className="primary-pill inline-pill"
-              type="button"
+              isGenerating={generatingMode === "script"}
+              disabled={Boolean(generatingMode)}
+              loadingLabel="剧本生成中"
               onClick={() =>
                 void applyGeneration(
                   "script",
@@ -3382,7 +3400,7 @@ function StepTwoSection({
               }
             >
               生成剧本
-            </button>
+            </AIActionButton>
             <button className="ghost-button inline-button" type="button" onClick={() => formatScriptText("dialogue")}>
               对白格式化
             </button>
@@ -3392,9 +3410,10 @@ function StepTwoSection({
             <button className="ghost-button inline-button" type="button" onClick={() => formatScriptText("action")}>
               动作标记
             </button>
-            <button
-              className="ghost-button inline-button"
-              type="button"
+            <AIActionButton
+              isGenerating={generatingMode === "check"}
+              disabled={Boolean(generatingMode)}
+              loadingLabel="检查生成中"
               onClick={() =>
                 void applyGeneration(
                   "check",
@@ -3405,7 +3424,7 @@ function StepTwoSection({
               }
             >
               一致性检查
-            </button>
+            </AIActionButton>
           </div>
 
           <label className="field-label">
@@ -3888,29 +3907,38 @@ function StepFiveSection({
 }) {
   const [form, setForm] = useState<StepFiveData>(project.step_five);
   const [saving, setSaving] = useState(false);
+  const [promptGenerationAction, setPromptGenerationAction] = useState<string | null>(null);
   useEffect(() => setForm(project.step_five), [project.step_five]);
 
   const visiblePrompts = form.prompts.filter((item) => !form.filter_text || item.shot_label.includes(form.filter_text));
 
   function generatePrompts(scope: "single" | "batch", mode: "t2i" | "i2v") {
+    if (promptGenerationAction) return;
+    const actionKey = `${scope}-${mode}`;
+    setPromptGenerationAction(actionKey);
     const shots = project.step_four.shots.length ? project.step_four.shots : [];
     const targets = scope === "single" ? shots.slice(0, 1) : shots;
-    const prompts = targets.map((shot) => {
-      const base = `${shot.scene}，${shot.characters.join("、")}，${shot.shot_size}，${shot.camera_angle}，${shot.composition}`;
-      return {
-        id: `prompt-${shot.id}-${mode}-${Date.now()}`,
-        shot_id: shot.id,
-        shot_label: `第${shot.episode_number}集 #${shot.shot_number}`,
-        selected: true,
-        t2i_prompt: mode === "t2i" ? `${base}，高一致性漫画风关键帧` : "",
-        i2v_prompt: mode === "i2v" ? `${base}，${shot.movement}，动作自然连贯，时长 ${shot.duration_seconds}s` : "",
-        negative_prompt: form.negative_template,
-        parameters: form.parameter_template,
-        locked_terms: project.step_three.consistency_rules,
-        version: "v1",
-      };
-    });
-    setForm((current) => ({ ...current, prompts: [...current.prompts, ...prompts] }));
+    setStatusMessage(mode === "t2i" ? "AI 正在生成图片提示词..." : "AI 正在生成视频提示词...");
+    window.setTimeout(() => {
+      const prompts = targets.map((shot) => {
+        const base = `${shot.scene}，${shot.characters.join("、")}，${shot.shot_size}，${shot.camera_angle}，${shot.composition}`;
+        return {
+          id: `prompt-${shot.id}-${mode}-${Date.now()}`,
+          shot_id: shot.id,
+          shot_label: `第${shot.episode_number}集 #${shot.shot_number}`,
+          selected: true,
+          t2i_prompt: mode === "t2i" ? `${base}，高一致性漫画风关键帧` : "",
+          i2v_prompt: mode === "i2v" ? `${base}，${shot.movement}，动作自然连贯，时长 ${shot.duration_seconds}s` : "",
+          negative_prompt: form.negative_template,
+          parameters: form.parameter_template,
+          locked_terms: project.step_three.consistency_rules,
+          version: "v1",
+        };
+      });
+      setForm((current) => ({ ...current, prompts: [...current.prompts, ...prompts] }));
+      setPromptGenerationAction(null);
+      setStatusMessage(`AI 已生成 ${prompts.length} 条${mode.toUpperCase()}提示词。`);
+    }, 420);
   }
 
   function batchReplace() {
@@ -3947,9 +3975,9 @@ function StepFiveSection({
       </div>
       <div className="action-row">
         <input value={form.filter_text} onChange={(event) => setForm({ ...form, filter_text: event.target.value })} placeholder="筛选镜头/场景/角色" />
-        <button className="primary-pill inline-pill" type="button" onClick={() => generatePrompts("batch", "t2i")}>批量 T2I</button>
-        <button className="ghost-button inline-button" type="button" onClick={() => generatePrompts("single", "t2i")}>单镜 T2I</button>
-        <button className="ghost-button inline-button" type="button" onClick={() => generatePrompts("batch", "i2v")}>批量 I2V</button>
+        <AIActionButton className="primary-pill inline-pill" isGenerating={promptGenerationAction === "batch-t2i"} disabled={Boolean(promptGenerationAction)} loadingLabel="T2I生成中" onClick={() => generatePrompts("batch", "t2i")}>批量 T2I</AIActionButton>
+        <AIActionButton isGenerating={promptGenerationAction === "single-t2i"} disabled={Boolean(promptGenerationAction)} loadingLabel="单镜T2I中" onClick={() => generatePrompts("single", "t2i")}>单镜 T2I</AIActionButton>
+        <AIActionButton isGenerating={promptGenerationAction === "batch-i2v"} disabled={Boolean(promptGenerationAction)} loadingLabel="I2V生成中" onClick={() => generatePrompts("batch", "i2v")}>批量 I2V</AIActionButton>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存提词"}</button>
       </div>
       <div className="field-row compact-row">
@@ -3986,16 +4014,19 @@ function StepSixSection({
 }) {
   const [form, setForm] = useState<StepSixData>(project.step_six);
   const [saving, setSaving] = useState(false);
+  const [imageGenerationAction, setImageGenerationAction] = useState<string | null>(null);
   useEffect(() => setForm(project.step_six), [project.step_six]);
   const selectedCount = form.candidates.filter((item) => item.status === "selected" || item.status === "first-frame" || item.status === "keyframe").length;
 
   async function generateImages(scope: "single" | "batch") {
+    if (imageGenerationAction) return;
     const prompts = project.step_five.prompts.length ? project.step_five.prompts : [];
     const targets = scope === "single" ? prompts.slice(0, 1) : prompts;
     if (!targets.length) {
       setStatusMessage("请先在步骤五生成 T2I 提示词。");
       return;
     }
+    setImageGenerationAction(scope);
     setStatusMessage(`正在调用 gpt-image-2 生成 ${targets.length} 张图片...`);
     try {
       const candidates: ImageCandidate[] = [];
@@ -4029,16 +4060,20 @@ function StepSixSection({
       setStatusMessage(`已生成 ${candidates.length} 张图片候选。`);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "图片生成失败");
+    } finally {
+      setImageGenerationAction(null);
     }
   }
 
   async function regenerateShot(shotId: string) {
+    if (imageGenerationAction) return;
     const prompt = project.step_five.prompts.find((item) => item.shot_id === shotId);
     if (!prompt) {
       setStatusMessage("没有找到该镜头的提示词");
       return;
     }
     const promptText = form.repaint_prompt || prompt.t2i_prompt || prompt.i2v_prompt;
+    setImageGenerationAction(`regenerate:${shotId}`);
     setStatusMessage("正在重新生成候选图...");
     try {
       const result = await generateImageCandidate({
@@ -4060,6 +4095,8 @@ function StepSixSection({
       setStatusMessage("已追加重新生成候选图，未覆盖已入选素材");
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "重新生成图片失败");
+    } finally {
+      setImageGenerationAction(null);
     }
   }
 
@@ -4114,8 +4151,8 @@ function StepSixSection({
           <option value="候选">候选</option>
           <option value="关键帧">关键帧</option>
         </select>
-        <button className="primary-pill inline-pill" type="button" onClick={() => void generateImages("batch")}>批量生成图片</button>
-        <button className="ghost-button inline-button" type="button" onClick={() => void generateImages("single")}>单镜生成</button>
+        <AIActionButton className="primary-pill inline-pill" isGenerating={imageGenerationAction === "batch"} disabled={Boolean(imageGenerationAction)} loadingLabel="图片批量生成中" onClick={() => void generateImages("batch")}>批量生成图片</AIActionButton>
+        <AIActionButton isGenerating={imageGenerationAction === "single"} disabled={Boolean(imageGenerationAction)} loadingLabel="单镜生成中" onClick={() => void generateImages("single")}>单镜生成</AIActionButton>
         <button className="ghost-button inline-button" type="button" onClick={validateSelectedPackage}>进入质检校验</button>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存候选图"}</button>
       </div>
@@ -4135,7 +4172,15 @@ function StepSixSection({
               <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "keyframe" } : item) }))}>关键帧</button>
               <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "selected" } : item) }))}>入选</button>
               <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "discarded" } : item) }))}>废弃</button>
-              <button className="ghost-mini-button" type="button" onClick={() => void regenerateShot(image.shot_id)}>重生成</button>
+              <AIActionButton
+                className="ghost-mini-button"
+                isGenerating={imageGenerationAction === `regenerate:${image.shot_id}`}
+                disabled={Boolean(imageGenerationAction)}
+                loadingLabel="生成中"
+                onClick={() => void regenerateShot(image.shot_id)}
+              >
+                重生成
+              </AIActionButton>
               <button className="ghost-mini-button" type="button" onClick={() => applyRepaint(image.id)}>局部重绘</button>
               <button className="ghost-mini-button" type="button" onClick={() => void copyTextToClipboard(image.prompt, "图片提示词已复制", setStatusMessage)}>复制词</button>
             </div>
@@ -4280,18 +4325,21 @@ function StepEightSection({
 }) {
   const [form, setForm] = useState<StepEightData>(project.step_eight);
   const [saving, setSaving] = useState(false);
+  const [videoGenerationAction, setVideoGenerationAction] = useState<string | null>(null);
   useEffect(() => setForm(project.step_eight), [project.step_eight]);
   const passedReports = project.step_seven.reports.filter((item) => item.status === "passed");
   const usableImages = project.step_six.candidates.filter((item) => item.status === "selected" || item.status === "first-frame" || item.status === "keyframe");
   const visibleClips = form.clips.filter((item) => !form.filter_text || item.shot_label.includes(form.filter_text) || item.status.includes(form.filter_text));
 
   async function generateVideos(scope: "single" | "batch") {
+    if (videoGenerationAction) return;
     const sourceImages = usableImages.filter((image) => !project.step_seven.reports.some((report) => report.asset_id === image.id && report.status !== "passed"));
     const targets = scope === "single" ? sourceImages.slice(0, 1) : sourceImages;
     if (!targets.length) {
       setStatusMessage("请先在步骤六生成并选择通过质检的关键帧。");
       return;
     }
+    setVideoGenerationAction(scope);
     setStatusMessage(`正在提交 ${targets.length} 个 MiniMax 视频生成任务...`);
     try {
       const clips: VideoClipItem[] = [];
@@ -4326,6 +4374,8 @@ function StepEightSection({
       setStatusMessage(`已提交 ${clips.length} 个 MiniMax 视频生成任务。`);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "视频生成任务提交失败");
+    } finally {
+      setVideoGenerationAction(null);
     }
   }
 
@@ -4347,12 +4397,14 @@ function StepEightSection({
   }
 
   async function refreshClipTask(clip: VideoClipItem) {
+    if (videoGenerationAction) return;
     const match = clip.metadata.match(/task_id=([^；\s]+)/);
     const taskId = match?.[1];
     if (!taskId) {
       setStatusMessage("该视频记录没有 MiniMax task_id。");
       return;
     }
+    setVideoGenerationAction(`refresh:${clip.id}`);
     setStatusMessage("正在查询 MiniMax 视频任务状态...");
     try {
       const result = await fetchVideoTaskStatus(taskId);
@@ -4374,6 +4426,8 @@ function StepEightSection({
       setStatusMessage(downloadUrl ? "视频任务已完成，已回填下载地址。" : `视频任务状态：${status}`);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "视频任务查询失败");
+    } finally {
+      setVideoGenerationAction(null);
     }
   }
 
@@ -4408,8 +4462,8 @@ function StepEightSection({
       </div>
       <div className="action-row">
         <input value={form.filter_text} onChange={(event) => setForm({ ...form, filter_text: event.target.value })} placeholder="筛选镜头/状态" />
-        <button className="primary-pill inline-pill" type="button" onClick={() => void generateVideos("batch")}>批量生成视频</button>
-        <button className="ghost-button inline-button" type="button" onClick={() => void generateVideos("single")}>单镜视频</button>
+        <AIActionButton className="primary-pill inline-pill" isGenerating={videoGenerationAction === "batch"} disabled={Boolean(videoGenerationAction)} loadingLabel="视频批量提交中" onClick={() => void generateVideos("batch")}>批量生成视频</AIActionButton>
+        <AIActionButton isGenerating={videoGenerationAction === "single"} disabled={Boolean(videoGenerationAction)} loadingLabel="单镜提交中" onClick={() => void generateVideos("single")}>单镜视频</AIActionButton>
         <button className="ghost-button inline-button" type="button" onClick={checkIntegrity}>完整性检查</button>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存视频"}</button>
       </div>
@@ -4429,7 +4483,15 @@ function StepEightSection({
             <div className="action-row">
               <button className="ghost-mini-button" type="button" onClick={() => updateClip(clip.id, { status: "final" })}>设为最终</button>
               <button className="ghost-mini-button" type="button" onClick={() => updateClip(clip.id, { status: "failed", fail_reason: clip.fail_reason || "人工标记失败" })}>标记失败</button>
-              <button className="ghost-mini-button" type="button" onClick={() => void refreshClipTask(clip)}>查询状态</button>
+              <AIActionButton
+                className="ghost-mini-button"
+                isGenerating={videoGenerationAction === `refresh:${clip.id}`}
+                disabled={Boolean(videoGenerationAction)}
+                loadingLabel="查询中"
+                onClick={() => void refreshClipTask(clip)}
+              >
+                查询状态
+              </AIActionButton>
               <button className="ghost-mini-button" type="button" onClick={() => regenerateClip(clip)}>重生成</button>
             </div>
           </article>

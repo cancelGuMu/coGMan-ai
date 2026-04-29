@@ -206,6 +206,40 @@
   align-items: center;
 }
 
+.ai-action-button {
+  position: relative;
+  min-width: 104px;
+  white-space: nowrap;
+}
+
+.ai-action-button.is-generating {
+  color: #1b1308;
+  border-color: rgba(255, 228, 168, 0.46);
+  background:
+    linear-gradient(135deg, rgba(255, 244, 207, 0.96), rgba(232, 189, 99, 0.98)),
+    rgba(255, 228, 168, 0.2);
+  box-shadow:
+    0 0 0 1px rgba(255, 238, 188, 0.26),
+    0 18px 38px rgba(232, 189, 99, 0.3),
+    inset 0 1px 0 rgba(255, 252, 238, 0.76);
+  transform: none;
+}
+
+.ai-button-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(70, 47, 15, 0.28);
+  border-top-color: #1b1308;
+  border-radius: 999px;
+  animation: ai-button-spin 780ms linear infinite;
+}
+
+@keyframes ai-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .import-file-button {
   gap: 8px;
 }
