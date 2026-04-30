@@ -113,7 +113,7 @@ select:focus {
 
 .home-page {
   --home-scale: 1;
-  --home-preview-scale: 1;
+  --home-preview-scale: 0.82;
   position: relative;
   width: 100%;
   margin: 0;
@@ -465,9 +465,9 @@ select:focus {
   z-index: 1;
   min-height: calc(100vh - 132px);
   display: grid;
-  grid-template-columns: minmax(460px, 0.92fr) minmax(860px, 1.26fr);
+  grid-template-columns: minmax(440px, 0.88fr) minmax(0, 1.12fr);
   align-items: center;
-  gap: 32px;
+  gap: 28px;
 }
 
 .hero-left {
@@ -819,7 +819,7 @@ select:focus {
 .hero-preview-shell {
   position: relative;
   width: 1120px;
-  max-width: 100%;
+  max-width: calc(100% / var(--hero-preview-scale));
   transform-style: preserve-3d;
   transition: transform 320ms ease;
 }
@@ -3700,7 +3700,7 @@ select:focus {
 @media (max-width: 1480px) {
   .home-page {
     --home-scale: 0.92;
-    --home-preview-scale: 0.84;
+    --home-preview-scale: 0.7;
   }
 
   .page-container {
@@ -3717,8 +3717,8 @@ select:focus {
   }
 
   .hero-layout {
-    grid-template-columns: minmax(0, 0.9fr) minmax(500px, 1fr);
-    gap: 30px;
+    grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+    gap: 24px;
   }
 
   .hero-preview-shell {
@@ -3733,7 +3733,7 @@ select:focus {
 @media (max-width: 1280px) {
   .home-page {
     --home-scale: 0.82;
-    --home-preview-scale: 0.62;
+    --home-preview-scale: 0.58;
   }
 
   .topbar-inner {
@@ -3757,7 +3757,7 @@ select:focus {
   }
 
   .hero-layout {
-    grid-template-columns: minmax(0, 0.98fr) minmax(0, 620px);
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 560px);
     min-height: auto;
     align-items: start;
     gap: 24px;
@@ -3795,7 +3795,7 @@ select:focus {
   }
 
   .hero-visual {
-    max-width: 720px;
+    max-width: 680px;
     margin: 0 auto;
     perspective-origin: 28% 42%;
     justify-content: center;
@@ -3873,7 +3873,7 @@ select:focus {
 @media (max-width: 1040px) {
   .home-page {
     --home-scale: 0.76;
-    --home-preview-scale: 0.68;
+    --home-preview-scale: 0.72;
   }
 
   .page-container {
