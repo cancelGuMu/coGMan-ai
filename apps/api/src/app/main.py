@@ -411,6 +411,23 @@ def generate_step_two(payload: GenerationRequest) -> GeneratedTextResponse:
     return GeneratedTextResponse(content=content, record=label)
 
 
+@app.post("/api/generate/text-task", response_model=GeneratedTextResponse)
+def api_generate_text_task(payload: GenerationRequest) -> GeneratedTextResponse:
+    task = get_prompt_task(payload.task_id, payload.mode)
+    prompt = (
+        f"{task.user_instruction}\n"
+        f"输出要求：{task.output_contract}\n\n"
+        "硬性格式：最终回答必须以 { 开头、以 } 结尾，且可被 JSON.parse 直接解析。"
+        "不要输出 Markdown、解释、寒暄或代码块。\n\n"
+        f"{payload.prompt}"
+    )
+    try:
+        content = generate_deepseek_text(payload.project_name, prompt, payload.mode, task.task_id)
+    except AIServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return GeneratedTextResponse(content=content, record=f"DeepSeek 完成 {task.task_id}")
+
+
 @app.post("/api/generate/image", response_model=GeneratedImageResponse)
 def api_generate_image(payload: ImageGenerationRequest) -> GeneratedImageResponse:
     try:

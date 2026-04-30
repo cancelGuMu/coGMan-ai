@@ -23,6 +23,7 @@ import {
   generateStepOneOutline,
   generateStepOneTask,
   generateStepTwoContent,
+  generateTextTask,
   generateVideoCandidate,
   importTextFile,
   renameProject,
@@ -55,11 +56,15 @@ import type {
   EpisodeDraft,
   ExportVersion,
   ImageCandidate,
+  OptimizationTask,
   PlatformMetric,
+  PromptItem,
   ProjectRecord,
   ProjectSummary,
   QualityReportItem,
+  ReworkTask,
   ScriptRhythmNode,
+  ShotItem,
   StepCompletionStatus,
   StepEightData,
   StepElevenData,
@@ -74,6 +79,7 @@ import type {
   StepTwoData,
   TimelineClip,
   VideoClipItem,
+  VoiceProfile,
 } from "./types";
 
 const dashboardRangeOptions: Array<{ value: DashboardRange; label: string }> = [
@@ -179,6 +185,91 @@ async function copyTextToClipboard(text: string, onSuccess: string, setStatusMes
   } catch {
     setStatusMessage("浏览器未授予剪贴板权限，内容已保留在页面中，可手动选择复制。");
   }
+}
+
+function collectJsonObjects(raw: string): Array<Record<string, unknown>> {
+  const candidates: string[] = [];
+  const fenced = raw.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi);
+  for (const match of fenced) candidates.push(match[1].trim());
+
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === "\"") inString = false;
+      continue;
+    }
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+    if (char === "{") {
+      if (depth === 0) start = index;
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        candidates.push(raw.slice(start, index + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return candidates.flatMap((candidate) => {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? [parsed as Record<string, unknown>] : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
+function firstJsonObject(raw: string): Record<string, unknown> {
+  return collectJsonObjects(raw)[0] ?? {};
+}
+
+function textValue(value: unknown, fallback = ""): string {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return value.map((item) => textValue(item)).filter(Boolean).join("\n");
+  if (value && typeof value === "object") return JSON.stringify(value, null, 2);
+  return fallback;
+}
+
+function listValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function numberValue(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function splitTextLines(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => textValue(item)).filter(Boolean);
+  return textValue(value)
+    .split(/\n|；|;/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function severityValue(value: unknown): "low" | "medium" | "high" {
+  const severity = textValue(value, "medium");
+  return severity === "low" || severity === "medium" || severity === "high" ? severity : "medium";
+}
+
+async function generateProjectTextTask(projectName: string, taskId: string, prompt: string) {
+  return generateTextTask({ project_name: projectName, task_id: taskId, mode: taskId.toLowerCase(), prompt });
 }
 
 function renderRollingMetricValue(value: string) {
@@ -2054,7 +2145,7 @@ function CreateCenterPage() {
             shellClassName="workspace-shell create-center-shell"
             headerEyebrow="十一步创作流"
             headerTitle={project.name}
-            headerDescription="步骤一与步骤二已经正式融入创作中心，步骤三到步骤十一的页面骨架、导航入口与占位区块也已同步搭好。"
+            headerDescription="十一步创作链路已接入项目数据与 AI 生成能力，可逐步生成、保存、校验和进入下游生产。"
             headerMeta={
               <>
                 <div className="project-switch-dropdown">
@@ -2654,23 +2745,39 @@ function StepOneSection({
     }
   }
 
-  function generateContinuityReport() {
-    const emptyEpisodes = form.episodes.filter((episode) => !episode.content.trim());
-    updateForm({
-      ...form,
-      continuity_report: emptyEpisodes.length
-        ? `连续性检查：还有 ${emptyEpisodes.length} 集缺少核心事件，建议先补齐再进入剧本创作。`
-        : "连续性检查：当前单集大纲均已填写，可进入剧本创作前复核节奏与钩子。",
-      continuity_issues: emptyEpisodes.slice(0, 4).map((episode) => ({
-        id: `issue-${episode.episode_number}`,
-        episode_number: episode.episode_number,
-        severity: "medium",
-        issue: `第 ${episode.episode_number} 集缺少核心事件`,
-        suggestion: "补充本集目标、冲突和结尾钩子。",
-        status: "open",
-      })),
-    });
-    setStatusMessage("连续性检查已生成。");
+  async function generateContinuityReport() {
+    if (foundationGenerating || aiGenerating) return;
+    setFoundationGenerating("mainline");
+    setStatusMessage("AI 正在生成连续性检查...");
+    try {
+      const result = await generateProjectTextTask(
+        project.name,
+        "S01_CONTINUITY_CHECK",
+        JSON.stringify({ season_outline: form.season_outline, episodes: form.episodes }, null, 2)
+      );
+      const parsed = firstJsonObject(result.content);
+      const issues = listValue(parsed.issues).map((item, index) => {
+        const record = item && typeof item === "object" ? item as Record<string, unknown> : {};
+        return {
+          id: `issue-ai-${Date.now()}-${index}`,
+          episode_number: Math.max(1, Math.round(numberValue(record.episode_number, index + 1))),
+          severity: severityValue(record.severity),
+          issue: textValue(record.issue, textValue(item, "AI 发现连续性风险")),
+          suggestion: textValue(record.suggestion, "建议补充动机、因果或结尾钩子。"),
+          status: "open" as const,
+        };
+      });
+      updateForm({
+        ...form,
+        continuity_report: textValue(parsed.report) || textValue(parsed.summary) || result.content,
+        continuity_issues: issues,
+      });
+      setStatusMessage("AI 连续性检查已生成。");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "AI 连续性检查失败");
+    } finally {
+      setFoundationGenerating(null);
+    }
   }
 
   return (
@@ -3078,6 +3185,49 @@ function StepTwoSection({
     void copyTextToClipboard(form.script_text, "剧本文本已复制到剪贴板。", setStatusMessage);
   }
 
+  async function applyRewrite() {
+    if (generatingMode) return;
+    const target = form.rewrite_tool.selected_target;
+    const originText = target === "novel" ? form.novel_text : form.script_text;
+    const selectedText = form.rewrite_tool.selection_text || originText;
+    if (!selectedText.trim()) {
+      setStatusMessage("请先填写需要改写的文本。");
+      return;
+    }
+    setGeneratingMode("rewrite");
+    setStatusMessage("AI 正在改写文本...");
+    try {
+      const result = await generateProjectTextTask(
+        project.name,
+        "S02_REWRITE",
+        [
+          `改写模式：${form.rewrite_tool.mode}`,
+          `改写目标：${target}`,
+          `改写要求：${form.rewrite_tool.rewrite_prompt || "增强节奏、保留剧情事实"}`,
+          "待改写文本：",
+          selectedText,
+        ].join("\n")
+      );
+      const parsed = firstJsonObject(result.content);
+      const rewritten = textValue(parsed.rewritten_text) || result.content;
+      const nextText =
+        form.rewrite_tool.mode === "partial" && originText.includes(selectedText)
+          ? originText.replace(selectedText, rewritten)
+          : `${originText}\n\n【AI 改写结果】\n${rewritten}`.trim();
+      if (target === "novel") {
+        setForm((current) => ({ ...current, novel_text: nextText, last_modified_by: "AI" }));
+      } else {
+        setForm((current) => ({ ...current, script_text: nextText, last_modified_by: "AI" }));
+      }
+      appendModificationRecord(`AI 完成${form.rewrite_tool.mode === "partial" ? "局部" : "批量"}改写`, "AI");
+      setStatusMessage(textValue(parsed.change_notes) || "AI 改写结果已写入当前目标文本");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "AI 改写失败");
+    } finally {
+      setGeneratingMode(null);
+    }
+  }
+
   async function applyGeneration(
     mode: string,
     setter: (content: string) => void,
@@ -3303,7 +3453,7 @@ function StepTwoSection({
 
           <div className="rewrite-card">
             <div className="rewrite-head">
-              <h4>改写工具弹窗（内嵌占位）</h4>
+              <h4>改写工具</h4>
               <div className="chip-row">
                 <button
                   className={`mode-switch ${form.rewrite_tool.mode === "partial" ? "active" : ""}`}
@@ -3371,27 +3521,10 @@ function StepTwoSection({
             <button
               className="ghost-button inline-button strong"
               type="button"
-              onClick={() => {
-                const target = form.rewrite_tool.selected_target;
-                const originText = target === "novel" ? form.novel_text : form.script_text;
-                const nextText = `${originText}\n\n【改写结果】\n${
-                  form.rewrite_tool.selection_text || "已按当前要求完成改写。"
-                }`.trim();
-
-                if (target === "novel") {
-                  setForm((current) => ({ ...current, novel_text: nextText, last_modified_by: "AI" }));
-                } else {
-                  setForm((current) => ({ ...current, script_text: nextText, last_modified_by: "AI" }));
-                }
-
-                appendModificationRecord(
-                  `AI 完成${form.rewrite_tool.mode === "partial" ? "局部" : "批量"}改写`,
-                  "AI"
-                );
-                setStatusMessage("改写工具结果已写入当前目标文本");
-              }}
+              onClick={() => void applyRewrite()}
+              disabled={Boolean(generatingMode)}
             >
-              应用改写
+              {generatingMode === "rewrite" ? "AI 改写中..." : "应用改写"}
             </button>
           </div>
         </div>
@@ -3594,21 +3727,51 @@ function StepThreeSection({
 }) {
   const [assetLibrary, setAssetLibrary] = useState<StepThreeData>(project.step_three);
   const [saving, setSaving] = useState(false);
+  const [aiAction, setAiAction] = useState<string | null>(null);
 
   useEffect(() => {
     setAssetLibrary(project.step_three);
   }, [project.step_three]);
 
-  function extractAssetCandidates() {
-    const scriptText = project.step_two.script_text || project.step_two.novel_text || "主角在核心场景中推动剧情。";
-    setAssetLibrary((current) => ({
-      ...current,
-      candidates: [
-        { id: `cand-char-${Date.now()}`, category: "character", name: "主角", description: scriptText.slice(0, 60), selected: true },
-        { id: `cand-scene-${Date.now()}`, category: "scene", name: "核心场景", description: "从剧本文本中提取的主要发生地点。", selected: true },
-        { id: `cand-prop-${Date.now()}`, category: "prop", name: "关键道具", description: "推动剧情反转的物件。", selected: false },
-      ],
-    }));
+  async function extractAssetCandidates() {
+    if (aiAction) return;
+    const source = [
+      "故事架构：",
+      project.step_one.season_outline,
+      "剧本/正文：",
+      project.step_two.script_text || project.step_two.novel_text || project.step_two.source_material,
+    ].join("\n");
+    setAiAction("extract-assets");
+    setStatusMessage?.("AI 正在提取资产候选...");
+    try {
+      const result = await generateProjectTextTask(project.name, "S03_ASSET_EXTRACT", source);
+      const parsed = firstJsonObject(result.content);
+      const candidates = listValue(parsed.candidates)
+        .map((item, index) => {
+          if (!item || typeof item !== "object") return null;
+          const record = item as Record<string, unknown>;
+          const category = textValue(record.category);
+          if (!["character", "scene", "prop"].includes(category)) return null;
+          return {
+            id: `cand-ai-${Date.now()}-${index}`,
+            category: category as "character" | "scene" | "prop",
+            name: textValue(record.name, `${category}-${index + 1}`),
+            description: textValue(record.description) || textValue(record.source_evidence),
+            selected: record.recommended !== false,
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => Boolean(item));
+      if (!candidates.length) {
+        setStatusMessage?.("AI 返回格式异常，未提取到资产候选。");
+        return;
+      }
+      setAssetLibrary((current) => ({ ...current, candidates }));
+      setStatusMessage?.(`AI 已提取 ${candidates.length} 个资产候选。`);
+    } catch (err) {
+      setStatusMessage?.(err instanceof Error ? err.message : "AI 资产提取失败");
+    } finally {
+      setAiAction(null);
+    }
   }
 
   function addSelectedCandidates() {
@@ -3730,9 +3893,14 @@ function StepThreeSection({
               </div>
             ))}
             <div className="action-row">
-              <button className="ghost-button inline-button" type="button" onClick={extractAssetCandidates}>
+              <AIActionButton
+                isGenerating={aiAction === "extract-assets"}
+                disabled={Boolean(aiAction)}
+                loadingLabel="资产提取中"
+                onClick={() => void extractAssetCandidates()}
+              >
                 提取资产
-              </button>
+              </AIActionButton>
               <button className="ghost-button inline-button" type="button" onClick={addSelectedCandidates}>
                 加入资产库
               </button>
@@ -3826,36 +3994,68 @@ function StepFourSection({
 }) {
   const [form, setForm] = useState<StepFourData>(project.step_four);
   const [saving, setSaving] = useState(false);
+  const [storyboardGenerating, setStoryboardGenerating] = useState(false);
 
   useEffect(() => setForm(project.step_four), [project.step_four]);
 
-  function generateShots() {
+  async function generateShots() {
+    if (storyboardGenerating) return;
     const episode = project.step_one.episodes.find((item) => item.episode_number === form.selected_episode_number) ?? project.step_one.episodes[0];
-    const scenes = project.step_three.scenes.length ? project.step_three.scenes : [{ name: "核心场景" }];
-    const characters = project.step_three.characters.map((item) => item.name).filter(Boolean);
-    const shots = Array.from({ length: 6 }, (_, index) => ({
-      id: `shot-${Date.now()}-${index}`,
-      episode_number: episode?.episode_number ?? 1,
-      shot_number: index + 1,
-      scene: scenes[index % scenes.length]?.name ?? "核心场景",
-      characters: characters.length ? characters.slice(0, 2) : ["主角"],
-      props: project.step_three.props.slice(0, 2).map((item) => item.name),
-      purpose: index === 0 ? "开场建立情境" : index === 5 ? "结尾钩子" : "推进冲突",
-      duration_seconds: 5 + index,
-      shot_size: ["远景", "中景", "近景", "特写"][index % 4],
-      camera_angle: ["平视", "俯视", "仰视", "过肩"][index % 4],
-      composition: "主体居中，保留动作方向和情绪空间。",
-      movement: ["定镜", "推进", "横移", "跟拍"][index % 4],
-      dialogue: episode?.content.slice(0, 60) ?? "",
-      rhythm: index % 2 ? "情绪升级" : "信息铺垫",
-      status: "ready" as const,
-    }));
-    setForm({
-      ...form,
-      shots,
-      task_preview: `已生成 ${shots.length} 个镜头任务，可进入提词生成。`,
-      total_duration_seconds: shots.reduce((sum, item) => sum + item.duration_seconds, 0),
-    });
+    setStoryboardGenerating(true);
+    setStatusMessage("AI 正在拆分镜头...");
+    try {
+      const result = await generateProjectTextTask(
+        project.name,
+        "S04_STORYBOARD_SPLIT",
+        [
+          `目标集数：第 ${episode?.episode_number ?? form.selected_episode_number} 集`,
+          `单集大纲：${episode?.content || "未填写"}`,
+          `结尾钩子：${episode?.hook || "未填写"}`,
+          "剧本：",
+          project.step_two.script_text || project.step_two.novel_text || "未填写",
+          "资产库：",
+          JSON.stringify(project.step_three, null, 2),
+        ].join("\n")
+      );
+      const parsed = firstJsonObject(result.content);
+      const shots = listValue(parsed.shots)
+        .flatMap((item, index): ShotItem[] => {
+          if (!item || typeof item !== "object") return [];
+          const record = item as Record<string, unknown>;
+          return [{
+            id: textValue(record.shot_id) || `shot-ai-${Date.now()}-${index}`,
+            episode_number: numberValue(record.episode_number, episode?.episode_number ?? form.selected_episode_number),
+            shot_number: numberValue(record.shot_number, index + 1),
+            scene: textValue(record.scene, "待定场景"),
+            characters: splitTextLines(record.characters),
+            props: splitTextLines(record.props),
+            purpose: textValue(record.purpose, "推进剧情"),
+            duration_seconds: Math.max(1, Math.round(numberValue(record.duration_seconds, 6))),
+            shot_size: textValue(record.shot_size, "中景"),
+            camera_angle: textValue(record.camera_angle, "平视"),
+            composition: textValue(record.composition, "主体清晰，构图稳定。"),
+            movement: textValue(record.movement, "定镜"),
+            dialogue: textValue(record.dialogue),
+            rhythm: textValue(record.rhythm, "信息推进"),
+            status: "ready" as const,
+          }];
+        });
+      if (!shots.length) {
+        setStatusMessage("AI 返回格式异常，未生成镜头。");
+        return;
+      }
+      setForm({
+        ...form,
+        shots,
+        task_preview: `AI 已生成 ${shots.length} 个镜头任务，可进入提词生成。`,
+        total_duration_seconds: shots.reduce((sum, item) => sum + item.duration_seconds, 0),
+      });
+      setStatusMessage(`AI 已完成 ${shots.length} 个镜头拆分。`);
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "AI 拆镜失败");
+    } finally {
+      setStoryboardGenerating(false);
+    }
   }
 
   function addShot() {
@@ -3921,7 +4121,7 @@ function StepFourSection({
         <div>
           <span className="eyebrow">步骤四</span>
           <h2>分镜规划</h2>
-          <p>选择集数后可从故事、剧本和资产库模拟拆镜，形成镜头表和后续任务队列。</p>
+          <p>选择集数后可从故事、剧本和资产库 AI 拆镜，形成镜头表和后续任务队列。</p>
         </div>
         <div className="chip-row">
           <span className="ghost-chip">镜头 {form.shots.length}</span>
@@ -3934,7 +4134,7 @@ function StepFourSection({
             <option key={episode.episode_number} value={episode.episode_number}>第 {episode.episode_number} 集</option>
           ))}
         </select>
-        <button className="primary-pill inline-pill" type="button" onClick={generateShots}>自动拆镜</button>
+        <AIActionButton className="primary-pill inline-pill" isGenerating={storyboardGenerating} disabled={storyboardGenerating} loadingLabel="AI 拆镜中" onClick={() => void generateShots()}>自动拆镜</AIActionButton>
         <button className="ghost-button inline-button" type="button" onClick={addShot}>新增镜头</button>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存分镜"}</button>
       </div>
@@ -3972,33 +4172,57 @@ function StepFiveSection({
 
   const visiblePrompts = form.prompts.filter((item) => !form.filter_text || item.shot_label.includes(form.filter_text));
 
-  function generatePrompts(scope: "single" | "batch", mode: "t2i" | "i2v") {
+  async function generatePrompts(scope: "single" | "batch", mode: "t2i" | "i2v") {
     if (promptGenerationAction) return;
     const actionKey = `${scope}-${mode}`;
     setPromptGenerationAction(actionKey);
     const shots = project.step_four.shots.length ? project.step_four.shots : [];
     const targets = scope === "single" ? shots.slice(0, 1) : shots;
+    if (!targets.length) {
+      setStatusMessage("请先在步骤四生成镜头。");
+      setPromptGenerationAction(null);
+      return;
+    }
     setStatusMessage(mode === "t2i" ? "AI 正在生成图片提示词..." : "AI 正在生成视频提示词...");
-    window.setTimeout(() => {
-      const prompts = targets.map((shot) => {
-        const base = `${shot.scene}，${shot.characters.join("、")}，${shot.shot_size}，${shot.camera_angle}，${shot.composition}`;
-        return {
-          id: `prompt-${shot.id}-${mode}-${Date.now()}`,
+    try {
+      const prompts: PromptItem[] = [];
+      for (let index = 0; index < targets.length; index += 1) {
+        const shot = targets[index];
+        const result = await generateProjectTextTask(
+          project.name,
+          mode === "t2i" ? "S05_T2I_PROMPT" : "S05_I2V_PROMPT",
+          [
+            "镜头：",
+            JSON.stringify(shot, null, 2),
+            "资产与一致性规则：",
+            JSON.stringify(project.step_three, null, 2),
+            `负面词模板：${form.negative_template}`,
+            `参数模板：${form.parameter_template}`,
+          ].join("\n")
+        );
+        const parsed = firstJsonObject(result.content);
+        const positivePrompt = textValue(parsed.positive_prompt) || textValue(parsed.full_prompt);
+        const motionPrompt = textValue(parsed.full_prompt) || textValue(parsed.motion_prompt);
+        prompts.push({
+          id: `prompt-${shot.id}-${mode}-${Date.now()}-${index}`,
           shot_id: shot.id,
           shot_label: `第${shot.episode_number}集 #${shot.shot_number}`,
           selected: true,
-          t2i_prompt: mode === "t2i" ? `${base}，高一致性漫画风关键帧` : "",
-          i2v_prompt: mode === "i2v" ? `${base}，${shot.movement}，动作自然连贯，时长 ${shot.duration_seconds}s` : "",
-          negative_prompt: form.negative_template,
-          parameters: form.parameter_template,
-          locked_terms: project.step_three.consistency_rules,
+          t2i_prompt: mode === "t2i" ? positivePrompt || result.content : "",
+          i2v_prompt: mode === "i2v" ? motionPrompt || result.content : "",
+          negative_prompt: textValue(parsed.negative_prompt, form.negative_template),
+          parameters: textValue(parsed.parameters, form.parameter_template),
+          locked_terms: textValue(parsed.locked_terms, project.step_three.consistency_rules),
           version: "v1",
-        };
-      });
+        });
+      }
       setForm((current) => ({ ...current, prompts: [...current.prompts, ...prompts] }));
-      setPromptGenerationAction(null);
       setStatusMessage(`AI 已生成 ${prompts.length} 条${mode.toUpperCase()}提示词。`);
-    }, 420);
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "AI 提示词生成失败");
+    } finally {
+      setPromptGenerationAction(null);
+    }
   }
 
   function batchReplace() {
@@ -4160,16 +4384,35 @@ function StepSixSection({
     }
   }
 
-  function applyRepaint(imageId: string) {
-    setForm((current) => ({
-      ...current,
-      candidates: current.candidates.map((item) =>
-        item.id === imageId
-          ? { ...item, metadata: `${item.metadata}；局部重绘：${current.repaint_mask_note || "默认蒙版"}`, repaint_prompt: current.repaint_prompt }
-          : item
-      ),
-    }));
-    setStatusMessage("局部重绘占位结果已写入候选图元数据");
+  async function applyRepaint(imageId: string) {
+    if (imageGenerationAction) return;
+    const image = form.candidates.find((item) => item.id === imageId);
+    if (!image) return;
+    setImageGenerationAction(`repaint:${imageId}`);
+    setStatusMessage("AI 正在生成局部重绘提示词...");
+    try {
+      const result = await generateProjectTextTask(
+        project.name,
+        "S06_REPAINT_PROMPT",
+        JSON.stringify({ image, repaint_mask_note: form.repaint_mask_note, repaint_prompt: form.repaint_prompt }, null, 2)
+      );
+      const parsed = firstJsonObject(result.content);
+      const repaintPrompt = textValue(parsed.repaint_prompt, result.content);
+      setForm((current) => ({
+        ...current,
+        candidates: current.candidates.map((item) =>
+          item.id === imageId
+            ? { ...item, metadata: `${item.metadata}；AI局部重绘提示已生成`, repaint_prompt: repaintPrompt }
+            : item
+        ),
+        repaint_prompt: repaintPrompt,
+      }));
+      setStatusMessage("AI 局部重绘提示词已写入候选图。");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "AI 局部重绘提示生成失败");
+    } finally {
+      setImageGenerationAction(null);
+    }
   }
 
   function validateSelectedPackage() {
@@ -4201,7 +4444,7 @@ function StepSixSection({
         <div>
           <span className="eyebrow">步骤六</span>
           <h2>画面生成</h2>
-          <p>根据 T2I 提示词生成占位候选图，支持筛选、预览、设为首帧/关键帧、废弃与复制提示词。</p>
+          <p>根据 T2I 提示词调用图片模型生成候选图，支持筛选、预览、设为首帧/关键帧、废弃与复制提示词。</p>
         </div>
         <div className="chip-row"><span className="ghost-chip">候选图 {form.candidates.length}</span><span className="ghost-chip">入选 {selectedCount}</span></div>
       </div>
@@ -4241,7 +4484,7 @@ function StepSixSection({
               >
                 重生成
               </AIActionButton>
-              <button className="ghost-mini-button" type="button" onClick={() => applyRepaint(image.id)}>局部重绘</button>
+              <AIActionButton className="ghost-mini-button" isGenerating={imageGenerationAction === `repaint:${image.id}`} disabled={Boolean(imageGenerationAction)} loadingLabel="生成中" onClick={() => void applyRepaint(image.id)}>局部重绘</AIActionButton>
               <button className="ghost-mini-button" type="button" onClick={() => void copyTextToClipboard(image.prompt, "图片提示词已复制", setStatusMessage)}>复制词</button>
             </div>
           </article>
@@ -4262,31 +4505,79 @@ function StepSevenSection({
 }) {
   const [form, setForm] = useState<StepSevenData>(project.step_seven);
   const [saving, setSaving] = useState(false);
+  const [qualityAction, setQualityAction] = useState<string | null>(null);
   useEffect(() => setForm(project.step_seven), [project.step_seven]);
   const selectedImages = project.step_six.candidates.filter((item) => item.status === "selected" || item.status === "first-frame" || item.status === "keyframe");
 
-  function buildReport(image: ImageCandidate, index: number): QualityReportItem {
-    const categories: QualityReportItem["category"][] = ["角色一致性", "场景道具", "分镜符合性", "生成错误"];
-    const category = categories[index % categories.length];
-    return {
-      id: `qc-${image.id}-${Date.now()}-${index}`,
-      asset_id: image.id,
-      shot_label: image.shot_label,
-      severity: index % 3 === 0 ? "high" : index % 2 === 0 ? "medium" : "low",
-      category,
-      issue: category === "生成错误" ? "手部或边缘细节需要人工复核" : `${category}存在轻微偏差`,
-      suggestion: "保留构图与角色身份，针对问题区域重新生成或局部重绘。",
-      repair_prompt: `${image.prompt}，修复${category}问题，保持角色与场景一致`,
-      status: "pending",
-      recheck_result: "",
-    };
-  }
-
-  function runQualityCheck(scope: "single" | "batch") {
+  async function runQualityCheck(scope: "single" | "batch") {
+    if (qualityAction) return;
     const targets = scope === "single" ? selectedImages.slice(0, 1) : selectedImages;
-    const reports = targets.map(buildReport);
-    setForm((current) => ({ ...current, reports: [...current.reports, ...reports], selected_asset_id: targets[0]?.id ?? current.selected_asset_id }));
-    setStatusMessage(`已生成 ${reports.length} 条模拟质检报告`);
+    if (!targets.length) {
+      setStatusMessage("请先在步骤六选择待质检图片。");
+      return;
+    }
+    setQualityAction(scope);
+    setStatusMessage("AI 正在生成质检报告...");
+    try {
+      const reports: QualityReportItem[] = [];
+      for (let index = 0; index < targets.length; index += 1) {
+        const image = targets[index];
+        const result = await generateProjectTextTask(
+          project.name,
+          "S07_IMAGE_QC",
+          [
+            "图片候选：",
+            JSON.stringify(image, null, 2),
+            "对应镜头：",
+            JSON.stringify(project.step_four.shots.find((shot) => shot.id === image.shot_id) ?? {}, null, 2),
+            "资产规则：",
+            JSON.stringify(project.step_three, null, 2),
+          ].join("\n")
+        );
+        const parsed = firstJsonObject(result.content);
+        const issues = listValue(parsed.issues);
+        if (!issues.length) {
+          reports.push({
+            id: `qc-${image.id}-${Date.now()}-${index}`,
+            asset_id: image.id,
+            shot_label: image.shot_label,
+            severity: "low",
+            category: "分镜符合性",
+            issue: textValue(parsed.overall_status, "AI 未发现明显阻断问题"),
+            suggestion: textValue(parsed.pass_for_video) === "false" ? "建议人工复核后再进入视频生成。" : "可人工确认后进入视频生成。",
+            repair_prompt: `${image.prompt}，保持角色与场景一致，修复可见瑕疵`,
+            status: "pending",
+            recheck_result: "",
+          });
+        } else {
+          issues.forEach((issue, issueIndex) => {
+            const record = issue && typeof issue === "object" ? (issue as Record<string, unknown>) : {};
+            const categoryText = textValue(record.category, "分镜符合性");
+            const category = ["角色一致性", "场景道具", "分镜符合性", "生成错误"].includes(categoryText)
+              ? categoryText as QualityReportItem["category"]
+              : "分镜符合性";
+            reports.push({
+              id: `qc-${image.id}-${Date.now()}-${index}-${issueIndex}`,
+              asset_id: image.id,
+              shot_label: image.shot_label,
+              severity: severityValue(record.severity),
+              category,
+              issue: textValue(record.issue, textValue(issue, "AI 发现潜在问题")),
+              suggestion: textValue(record.suggestion, "请按问题区域重新生成或局部重绘。"),
+              repair_prompt: textValue(record.repair_prompt, `${image.prompt}，修复${category}问题，保持角色与场景一致`),
+              status: "pending",
+              recheck_result: "",
+            });
+          });
+        }
+      }
+      setForm((current) => ({ ...current, reports: [...current.reports, ...reports], selected_asset_id: targets[0]?.id ?? current.selected_asset_id }));
+      setStatusMessage(`AI 已生成 ${reports.length} 条质检报告`);
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "AI 质检失败");
+    } finally {
+      setQualityAction(null);
+    }
   }
 
   function createReworkTask(report: QualityReportItem) {
@@ -4345,8 +4636,8 @@ function StepSevenSection({
         <div className="chip-row"><span className="ghost-chip">待检素材 {selectedImages.length}</span><span className="ghost-chip">问题 {form.reports.length}</span></div>
       </div>
       <div className="action-row">
-        <button className="primary-pill inline-pill" type="button" onClick={() => runQualityCheck("batch")}>批量模拟质检</button>
-        <button className="ghost-button inline-button" type="button" onClick={() => runQualityCheck("single")}>单素材质检</button>
+        <AIActionButton className="primary-pill inline-pill" isGenerating={qualityAction === "batch"} disabled={Boolean(qualityAction)} loadingLabel="AI 质检中" onClick={() => void runQualityCheck("batch")}>批量AI质检</AIActionButton>
+        <AIActionButton isGenerating={qualityAction === "single"} disabled={Boolean(qualityAction)} loadingLabel="AI 质检中" onClick={() => void runQualityCheck("single")}>单素材质检</AIActionButton>
         <button className="ghost-button inline-button" type="button" onClick={() => markPassed()}>批量标记通过</button>
         <button className="ghost-button inline-button" type="button" onClick={exportReport}>导出报告</button>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存质检"}</button>
@@ -4443,17 +4734,35 @@ function StepEightSection({
     setForm((current) => ({ ...current, clips: current.clips.map((item) => item.id === clipId ? { ...item, ...patch } : item) }));
   }
 
-  function regenerateClip(clip: VideoClipItem) {
-    const next: VideoClipItem = {
-      ...clip,
-      id: `clip-reg-${clip.id}-${Date.now()}`,
-      status: "candidate",
-      fail_reason: "",
-      version: `${clip.version}-R`,
-      metadata: `${clip.metadata}；重生成策略：${clip.regeneration_strategy}`,
-    };
-    setForm((current) => ({ ...current, clips: [...current.clips, next] }));
-    setStatusMessage("已保留旧版本并追加重生成候选视频");
+  async function regenerateClip(clip: VideoClipItem) {
+    if (videoGenerationAction) return;
+    const sourceImage = usableImages.find((image) => image.id === clip.source_image_id);
+    setVideoGenerationAction(`regenerate:${clip.id}`);
+    setStatusMessage("AI 正在重新提交视频生成任务...");
+    try {
+      const result = await generateVideoCandidate({
+        prompt: `${clip.motion_prompt}\n重生成策略：${clip.regeneration_strategy || "保持首帧一致，修复失败原因。"}\n失败原因：${clip.fail_reason || "未填写"}`,
+        shot_id: clip.shot_id,
+        shot_label: clip.shot_label,
+        source_image_url: sourceImage?.url?.startsWith("http") ? sourceImage.url : null,
+        duration_seconds: clip.duration_seconds,
+      });
+      const next: VideoClipItem = {
+        ...clip,
+        id: `clip-reg-${clip.id}-${Date.now()}`,
+        status: "candidate",
+        fail_reason: "",
+        version: `${clip.version}-R`,
+        url: "",
+        metadata: `${result.provider} / ${result.model}；${result.metadata}；任务状态：${result.status}；重生成策略：${clip.regeneration_strategy}`,
+      };
+      setForm((current) => ({ ...current, clips: [...current.clips, next] }));
+      setStatusMessage("已重新提交 MiniMax 视频生成任务，并保留旧版本。");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "视频重生成提交失败");
+    } finally {
+      setVideoGenerationAction(null);
+    }
   }
 
   async function refreshClipTask(clip: VideoClipItem) {
@@ -4552,7 +4861,15 @@ function StepEightSection({
               >
                 查询状态
               </AIActionButton>
-              <button className="ghost-mini-button" type="button" onClick={() => regenerateClip(clip)}>重生成</button>
+              <AIActionButton
+                className="ghost-mini-button"
+                isGenerating={videoGenerationAction === `regenerate:${clip.id}`}
+                disabled={Boolean(videoGenerationAction)}
+                loadingLabel="提交中"
+                onClick={() => void regenerateClip(clip)}
+              >
+                重生成
+              </AIActionButton>
             </div>
           </article>
         ))}
@@ -4572,66 +4889,165 @@ function StepNineSection({
 }) {
   const [form, setForm] = useState<StepNineData>(project.step_nine);
   const [saving, setSaving] = useState(false);
+  const [audioAction, setAudioAction] = useState<string | null>(null);
   useEffect(() => setForm(project.step_nine), [project.step_nine]);
 
-  function extractDialogue() {
-    const shots = project.step_four.shots.length ? project.step_four.shots : [];
-    const lines: DialogueLine[] = shots.map((shot, index) => ({
-      id: `line-${shot.id}-${Date.now()}`,
-      shot_id: shot.id,
-      shot_label: `第${shot.episode_number}集 #${shot.shot_number}`,
-      speaker: shot.characters[0] || "旁白",
-      text: shot.dialogue || shot.purpose || "根据画面补充一句推动剧情的台词。",
-      emotion: index % 2 ? "紧张" : "克制",
-      pause_seconds: 0.4,
-      audio_status: "pending",
-    }));
-    const voiceProfiles = Array.from(new Set(lines.map((line) => line.speaker))).map((character) => ({
-      id: `voice-${character}`,
-      character,
-      tone: character === "旁白" ? "沉稳叙述" : "清亮自然",
-      speed: "中速",
-      emotion_strength: "中",
-    }));
-    setForm((current) => ({ ...current, dialogue_lines: lines, voice_profiles: voiceProfiles }));
-    setStatusMessage(`已提取 ${lines.length} 条台词/旁白`);
+  async function extractDialogue() {
+    if (audioAction) return;
+    setAudioAction("dialogue");
+    setStatusMessage("AI 正在提取台词...");
+    try {
+      const result = await generateProjectTextTask(
+        project.name,
+        "S09_DIALOGUE_EXTRACT",
+        [
+          "剧本：",
+          project.step_two.script_text || project.step_two.novel_text,
+          "分镜：",
+          JSON.stringify(project.step_four.shots, null, 2),
+        ].join("\n")
+      );
+      const parsed = firstJsonObject(result.content);
+      const lines = listValue(parsed.dialogue_lines)
+        .flatMap((item, index): DialogueLine[] => {
+          if (!item || typeof item !== "object") return [];
+          const record = item as Record<string, unknown>;
+          const shotId = textValue(record.shot_id) || project.step_four.shots[index]?.id || "";
+          const shot = project.step_four.shots.find((candidate) => candidate.id === shotId);
+          return [{
+            id: `line-ai-${Date.now()}-${index}`,
+            shot_id: shotId,
+            shot_label: shot ? `第${shot.episode_number}集 #${shot.shot_number}` : textValue(record.shot_label, `台词 ${index + 1}`),
+            speaker: textValue(record.speaker, "旁白"),
+            text: textValue(record.text, "待补充台词"),
+            emotion: textValue(record.emotion, "自然"),
+            pause_seconds: numberValue(record.pause_seconds, 0.4),
+            audio_status: "pending" as const,
+          }];
+        });
+      if (!lines.length) {
+        setStatusMessage("AI 返回格式异常，未提取到台词。");
+        return;
+      }
+      setForm((current) => ({ ...current, dialogue_lines: lines }));
+      setStatusMessage(`AI 已提取 ${lines.length} 条台词/旁白`);
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "AI 台词提取失败");
+    } finally {
+      setAudioAction(null);
+    }
   }
 
-  function generateAudio(includeNarration = false) {
-    setForm((current) => ({
-      ...current,
-      dialogue_lines: current.dialogue_lines.map((line) => includeNarration || line.speaker !== "旁白" ? { ...line, audio_status: "generated" } : line),
-      lip_sync_tasks: current.dialogue_lines.map((line) => `口型同步任务：${line.shot_label} / ${line.speaker}`),
-    }));
-    setStatusMessage(includeNarration ? "旁白与对白音频占位已生成" : "角色配音占位已生成");
+  async function generateAudio(includeNarration = false) {
+    if (audioAction) return;
+    setAudioAction(includeNarration ? "narration" : "voice");
+    setStatusMessage(includeNarration ? "AI 正在生成旁白/配音规划..." : "AI 正在生成配音规划...");
+    try {
+      const result = await generateProjectTextTask(
+        project.name,
+        "S09_VOICE_PROFILE",
+        JSON.stringify({ includeNarration, dialogue_lines: form.dialogue_lines, characters: project.step_three.characters }, null, 2)
+      );
+      const parsed = firstJsonObject(result.content);
+      const profiles = listValue(parsed.voice_profiles)
+        .map((item, index) => {
+          if (!item || typeof item !== "object") return null;
+          const record = item as Record<string, unknown>;
+          return {
+            id: `voice-ai-${Date.now()}-${index}`,
+            character: textValue(record.character, `角色${index + 1}`),
+            tone: textValue(record.tone, "自然"),
+            speed: textValue(record.speed, "中速"),
+            emotion_strength: textValue(record.emotion_strength, "中"),
+          };
+        })
+        .filter((item): item is VoiceProfile => Boolean(item));
+      setForm((current) => ({
+        ...current,
+        voice_profiles: profiles.length ? profiles : current.voice_profiles,
+        dialogue_lines: current.dialogue_lines.map((line) => includeNarration || line.speaker !== "旁白" ? { ...line, audio_status: "generated" } : line),
+        lip_sync_tasks: current.dialogue_lines.map((line) => `AI 口型同步任务：${line.shot_label} / ${line.speaker}`),
+      }));
+      setStatusMessage(includeNarration ? "AI 旁白与对白规划已生成" : "AI 角色配音规划已生成");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "AI 配音规划失败");
+    } finally {
+      setAudioAction(null);
+    }
   }
 
-  function generateSubtitles() {
-    let cursor = 0;
-    const cues = form.dialogue_lines.map((line) => {
-      const duration = Math.max(1.8, line.text.length * 0.16 + line.pause_seconds);
-      const cue = {
-        id: `sub-${line.id}`,
-        shot_id: line.shot_id,
-        start_seconds: Number(cursor.toFixed(1)),
-        end_seconds: Number((cursor + duration).toFixed(1)),
-        text: line.text,
-      };
-      cursor += duration;
-      return cue;
-    });
-    setForm((current) => ({ ...current, subtitle_cues: cues }));
-    setStatusMessage("字幕时间轴已生成");
+  async function generateSubtitles() {
+    if (audioAction) return;
+    setAudioAction("subtitle");
+    setStatusMessage("AI 正在生成字幕时间轴...");
+    try {
+      const result = await generateProjectTextTask(
+        project.name,
+        "S09_SUBTITLE_TIMELINE",
+        JSON.stringify({ dialogue_lines: form.dialogue_lines, clips: project.step_eight.clips, subtitle_style: form.subtitle_style }, null, 2)
+      );
+      const parsed = firstJsonObject(result.content);
+      const cues = listValue(parsed.subtitle_cues)
+        .map((item, index) => {
+          if (!item || typeof item !== "object") return null;
+          const record = item as Record<string, unknown>;
+          return {
+            id: `sub-ai-${Date.now()}-${index}`,
+            shot_id: textValue(record.shot_id, form.dialogue_lines[index]?.shot_id ?? ""),
+            start_seconds: numberValue(record.start_seconds, index * 2),
+            end_seconds: numberValue(record.end_seconds, index * 2 + 1.8),
+            text: textValue(record.text, form.dialogue_lines[index]?.text ?? ""),
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => Boolean(item));
+      setForm((current) => ({ ...current, subtitle_cues: cues }));
+      setStatusMessage(`AI 已生成 ${cues.length} 条字幕。`);
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "AI 字幕生成失败");
+    } finally {
+      setAudioAction(null);
+    }
   }
 
-  function addSoundEffect() {
-    setForm((current) => ({
-      ...current,
-      sound_effects: [
-        ...current.sound_effects,
-        { id: `sfx-${Date.now()}`, shot_label: current.dialogue_lines[0]?.shot_label || "全片", type: "环境音", description: "低频环境氛围", volume: 55 },
-      ],
-    }));
+  async function addSoundEffect() {
+    if (audioAction) return;
+    setAudioAction("sound");
+    setStatusMessage("AI 正在生成音效任务建议...");
+    try {
+      const result = await generateProjectTextTask(
+        project.name,
+        "S09_SOUND_EFFECTS",
+        JSON.stringify({ shots: project.step_four.shots, dialogue_lines: form.dialogue_lines, clips: project.step_eight.clips }, null, 2)
+      );
+      const parsed = firstJsonObject(result.content);
+      const soundEffects = listValue(parsed.sound_effects)
+        .flatMap((item, index) => {
+          if (!item || typeof item !== "object") return [];
+          const record = item as Record<string, unknown>;
+          const type = textValue(record.type, "环境音");
+          return [{
+            id: `sfx-ai-${Date.now()}-${index}`,
+            shot_label: textValue(record.shot_label, form.dialogue_lines[index]?.shot_label || "全片"),
+            type: (["环境音", "动作音效", "转场音效"].includes(type) ? type : "环境音") as "环境音" | "动作音效" | "转场音效",
+            description: textValue(record.description, "AI 生成音效任务建议"),
+            volume: Math.max(0, Math.min(100, Math.round(numberValue(record.volume, 55)))),
+          }];
+        });
+      if (!soundEffects.length) {
+        setStatusMessage("AI 返回格式异常，未生成音效建议。");
+        return;
+      }
+      setForm((current) => ({
+        ...current,
+        sound_effects: [...current.sound_effects, ...soundEffects],
+        mix_settings: textValue(parsed.mix_notes, current.mix_settings),
+      }));
+      setStatusMessage(`AI 已生成 ${soundEffects.length} 条音效任务建议，后续仍需制作或导入真实音频素材。`);
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "AI 音效任务建议生成失败");
+    } finally {
+      setAudioAction(null);
+    }
   }
 
   function checkAudioSubtitle() {
@@ -4663,11 +5079,11 @@ function StepNineSection({
         <div className="chip-row"><span className="ghost-chip">台词 {form.dialogue_lines.length}</span><span className="ghost-chip">字幕 {form.subtitle_cues.length}</span></div>
       </div>
       <div className="action-row">
-        <button className="primary-pill inline-pill" type="button" onClick={extractDialogue}>提取台词</button>
-        <button className="ghost-button inline-button" type="button" onClick={() => generateAudio(false)}>生成配音</button>
-        <button className="ghost-button inline-button" type="button" onClick={() => generateAudio(true)}>生成旁白</button>
-        <button className="ghost-button inline-button" type="button" onClick={generateSubtitles}>生成字幕</button>
-        <button className="ghost-button inline-button" type="button" onClick={addSoundEffect}>新增音效</button>
+        <AIActionButton className="primary-pill inline-pill" isGenerating={audioAction === "dialogue"} disabled={Boolean(audioAction)} loadingLabel="AI 提取中" onClick={() => void extractDialogue()}>提取台词</AIActionButton>
+        <AIActionButton isGenerating={audioAction === "voice"} disabled={Boolean(audioAction)} loadingLabel="AI 规划中" onClick={() => void generateAudio(false)}>生成配音</AIActionButton>
+        <AIActionButton isGenerating={audioAction === "narration"} disabled={Boolean(audioAction)} loadingLabel="AI 规划中" onClick={() => void generateAudio(true)}>生成旁白</AIActionButton>
+        <AIActionButton isGenerating={audioAction === "subtitle"} disabled={Boolean(audioAction)} loadingLabel="AI 字幕中" onClick={() => void generateSubtitles()}>生成字幕</AIActionButton>
+        <AIActionButton isGenerating={audioAction === "sound"} disabled={Boolean(audioAction)} loadingLabel="AI 音效建议中" onClick={() => void addSoundEffect()}>生成音效建议</AIActionButton>
         <button className="ghost-button inline-button" type="button" onClick={checkAudioSubtitle}>完整性检查</button>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存音频字幕"}</button>
       </div>
@@ -4683,7 +5099,7 @@ function StepNineSection({
             <strong>{line.shot_label} · {line.speaker}</strong>
             <span>{line.emotion} / {line.audio_status}</span>
             <p>{line.text}</p>
-            <small>暂停 {line.pause_seconds}s；播放控件占位：{line.audio_status === "generated" ? "可播放模拟音频" : "待生成"}</small>
+            <small>暂停 {line.pause_seconds}s；音频状态：{line.audio_status === "generated" ? "AI 配音规划已生成" : "待生成"}</small>
           </article>
         ))}
       </div>
@@ -4702,33 +5118,74 @@ function StepTenSection({
 }) {
   const [form, setForm] = useState<StepTenData>(project.step_ten);
   const [saving, setSaving] = useState(false);
+  const [editingAction, setEditingAction] = useState<string | null>(null);
   useEffect(() => setForm(project.step_ten), [project.step_ten]);
 
-  function autoArrange() {
-    let cursor = 0;
-    const videoClips: TimelineClip[] = project.step_eight.clips.filter((clip) => clip.status === "final").map((clip) => {
-      const start = cursor;
-      cursor += clip.duration_seconds;
-      return { id: `tl-video-${clip.id}`, track: "video", name: clip.shot_label, source_id: clip.id, start_seconds: start, end_seconds: cursor, transition: "硬切", notes: clip.metadata };
-    });
-    const subtitleClips: TimelineClip[] = project.step_nine.subtitle_cues.map((cue) => ({ id: `tl-sub-${cue.id}`, track: "subtitle", name: cue.text, source_id: cue.id, start_seconds: cue.start_seconds, end_seconds: cue.end_seconds, transition: "无", notes: "字幕轨" }));
-    const exportVersions: ExportVersion[] = ["正片版", "竖版", "横版", "预告版"].map((format) => ({ id: `export-${format}`, format: format as ExportVersion["format"], status: "draft", settings: `${format} / 1080p / H.264` }));
-    setForm((current) => ({
-      ...current,
-      timeline_clips: [...videoClips, ...subtitleClips],
-      export_versions: exportVersions,
-      rhythm_marks: ["开头钩子 0s", `结尾悬念 ${cursor}s`],
-      package_checklist: `视频 ${videoClips.length} 段；字幕 ${subtitleClips.length} 条；总时长 ${cursor}s`,
-    }));
-    setStatusMessage("已按分镜顺序自动编排时间线");
+  async function autoArrange() {
+    if (editingAction) return;
+    setEditingAction("timeline");
+    setStatusMessage("AI 正在编排时间线...");
+    try {
+      const result = await generateProjectTextTask(
+        project.name,
+        "S10_TIMELINE",
+        JSON.stringify({ videos: project.step_eight.clips, audio_subtitle: project.step_nine, transition_settings: form.transition_settings }, null, 2)
+      );
+      const parsed = firstJsonObject(result.content);
+      const timelineClips = listValue(parsed.timeline_clips)
+        .map((item, index) => {
+          if (!item || typeof item !== "object") return null;
+          const record = item as Record<string, unknown>;
+          const track = textValue(record.track, "video");
+          return {
+            id: textValue(record.id) || `tl-ai-${Date.now()}-${index}`,
+            track: (["video", "audio", "subtitle", "effect"].includes(track) ? track : "video") as TimelineClip["track"],
+            name: textValue(record.name, `片段 ${index + 1}`),
+            source_id: textValue(record.source_id),
+            start_seconds: numberValue(record.start_seconds, index * 3),
+            end_seconds: numberValue(record.end_seconds, index * 3 + 3),
+            transition: textValue(record.transition, "硬切"),
+            notes: textValue(record.notes),
+          };
+        })
+        .filter((item): item is TimelineClip => Boolean(item));
+      const exportVersions: ExportVersion[] = ["正片版", "竖版", "横版", "预告版"].map((format) => ({ id: `export-${format}`, format: format as ExportVersion["format"], status: "draft", settings: `${format} / 1080p / H.264` }));
+      setForm((current) => ({
+        ...current,
+        timeline_clips: timelineClips,
+        export_versions: exportVersions,
+        rhythm_marks: splitTextLines(parsed.rhythm_marks),
+        package_checklist: textValue(parsed.package_checklist, `AI 已编排 ${timelineClips.length} 个时间线片段`),
+        validation_report: splitTextLines(parsed.blocking_issues).join("\n"),
+      }));
+      setStatusMessage(`AI 已编排 ${timelineClips.length} 个时间线片段。`);
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "AI 自动编排失败");
+    } finally {
+      setEditingAction(null);
+    }
   }
 
-  function checkAlignment() {
-    const videoEnd = Math.max(0, ...form.timeline_clips.filter((clip) => clip.track === "video").map((clip) => clip.end_seconds));
-    const subtitleEnd = Math.max(0, ...form.timeline_clips.filter((clip) => clip.track === "subtitle").map((clip) => clip.end_seconds));
-    const report = subtitleEnd > videoEnd + 1 ? "字幕时间超过视频总时长，请检查尾部字幕。" : "音画字幕对齐检查通过。";
-    setForm((current) => ({ ...current, edit_qc_report: report, validation_report: report }));
-    setStatusMessage(report);
+  async function checkAlignment() {
+    if (editingAction) return;
+    setEditingAction("qc");
+    setStatusMessage("AI 正在检查音画字幕...");
+    try {
+      const result = await generateProjectTextTask(
+        project.name,
+        "S10_EDIT_QC",
+        JSON.stringify({ timeline_clips: form.timeline_clips, subtitles: project.step_nine.subtitle_cues, videos: project.step_eight.clips }, null, 2)
+      );
+      const parsed = firstJsonObject(result.content);
+      const report = textValue(parsed.edit_qc_report, result.content);
+      const issues = splitTextLines(parsed.issues).join("\n");
+      setForm((current) => ({ ...current, edit_qc_report: report, validation_report: issues || report }));
+      setStatusMessage("AI 音画字幕检查已完成。");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "AI 音画字幕检查失败");
+    } finally {
+      setEditingAction(null);
+    }
   }
 
   function createExportTask() {
@@ -4736,15 +5193,40 @@ function StepTenSection({
     setStatusMessage("导出任务已创建，可追踪横版/竖版/预告版/正片版");
   }
 
-  function addCoverCandidate() {
+  async function addCoverCandidate() {
+    if (editingAction) return;
     const source = project.step_six.candidates.find((item) => item.status === "selected" || item.status === "keyframe" || item.status === "first-frame");
-    setForm((current) => ({
-      ...current,
-      cover_candidates: [
-        ...current.cover_candidates,
-        { id: `cover-${Date.now()}`, image_url: source?.url || "/images/hero-role-rin.png", title: project.name, subtitle: "命运反转，从这一刻开始", tags: "高能,反转,短剧", selected: current.cover_candidates.length === 0 },
-      ],
-    }));
+    setEditingAction("cover");
+    setStatusMessage("AI 正在生成封面候选...");
+    try {
+      const result = await generateProjectTextTask(
+        project.name,
+        "S10_COVER_TITLE",
+        JSON.stringify({ source_image: source, story: project.step_one, script: project.step_two.script_text }, null, 2)
+      );
+      const parsed = firstJsonObject(result.content);
+      const rawCover = listValue(parsed.cover_candidates)[0];
+      const cover = rawCover && typeof rawCover === "object" ? rawCover as Record<string, unknown> : parsed;
+      setForm((current) => ({
+        ...current,
+        cover_candidates: [
+          ...current.cover_candidates,
+          {
+            id: `cover-ai-${Date.now()}`,
+            image_url: source?.url || "/images/hero-role-rin.png",
+            title: textValue(cover.title, project.name),
+            subtitle: textValue(cover.subtitle, textValue(cover.description, "高能反转，即刻开场")),
+            tags: splitTextLines(cover.tags).join(",") || "高能,反转,短剧",
+            selected: current.cover_candidates.length === 0,
+          },
+        ],
+      }));
+      setStatusMessage("AI 封面候选已生成。");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "AI 封面候选生成失败");
+    } finally {
+      setEditingAction(null);
+    }
   }
 
   function validatePublishPackage() {
@@ -4776,10 +5258,10 @@ function StepTenSection({
         <div className="chip-row"><span className="ghost-chip">时间线 {form.timeline_clips.length}</span><span className="ghost-chip">导出 {form.export_versions.length}</span></div>
       </div>
       <div className="action-row">
-        <button className="primary-pill inline-pill" type="button" onClick={autoArrange}>自动编排</button>
-        <button className="ghost-button inline-button" type="button" onClick={checkAlignment}>音画字幕检查</button>
+        <AIActionButton className="primary-pill inline-pill" isGenerating={editingAction === "timeline"} disabled={Boolean(editingAction)} loadingLabel="AI 编排中" onClick={() => void autoArrange()}>自动编排</AIActionButton>
+        <AIActionButton isGenerating={editingAction === "qc"} disabled={Boolean(editingAction)} loadingLabel="AI 检查中" onClick={() => void checkAlignment()}>音画字幕检查</AIActionButton>
         <button className="ghost-button inline-button" type="button" onClick={createExportTask}>创建导出任务</button>
-        <button className="ghost-button inline-button" type="button" onClick={addCoverCandidate}>新增封面候选</button>
+        <AIActionButton isGenerating={editingAction === "cover"} disabled={Boolean(editingAction)} loadingLabel="AI 封面中" onClick={() => void addCoverCandidate()}>新增封面候选</AIActionButton>
         <button className="ghost-button inline-button" type="button" onClick={validatePublishPackage}>进入发布校验</button>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存剪辑"}</button>
       </div>
@@ -4820,15 +5302,36 @@ function StepElevenSection({
 }) {
   const [form, setForm] = useState<StepElevenData>(project.step_eleven);
   const [saving, setSaving] = useState(false);
+  const [publishAction, setPublishAction] = useState<string | null>(null);
   useEffect(() => setForm(project.step_eleven), [project.step_eleven]);
 
-  function generatePublishCopy() {
+  async function generatePublishCopy() {
+    if (publishAction) return;
     const cover = project.step_ten.cover_candidates.find((item) => item.selected);
-    setForm((current) => ({
-      ...current,
-      publish_copy: `标题：${cover?.title || project.name}\n简介：${cover?.subtitle || "一集看完命运反转。"}\n标签：${cover?.tags || "短剧,AI动画,反转"}\n话题：#AI短剧 #原创故事`,
-    }));
-    setStatusMessage("发布文案已生成");
+    setPublishAction("copy");
+    setStatusMessage("AI 正在生成发布文案...");
+    try {
+      const result = await generateProjectTextTask(
+        project.name,
+        "S11_PUBLISH_COPY",
+        JSON.stringify({ cover, story: project.step_one, script: project.step_two.script_text, package: project.step_ten }, null, 2)
+      );
+      const parsed = firstJsonObject(result.content);
+      const copy = textValue(parsed.publish_copy) ||
+        [
+          `标题：${textValue(parsed.title, cover?.title || project.name)}`,
+          `简介：${textValue(parsed.description)}`,
+          `标签：${splitTextLines(parsed.tags).join(",")}`,
+          `话题：${splitTextLines(parsed.topics).join(" ")}`,
+          `置顶评论：${textValue(parsed.comment_pin)}`,
+        ].filter((line) => line.replace(/^[^：]+：/, "").trim()).join("\n");
+      setForm((current) => ({ ...current, publish_copy: copy || result.content }));
+      setStatusMessage("AI 发布文案已生成");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "AI 发布文案生成失败");
+    } finally {
+      setPublishAction(null);
+    }
   }
 
   function addPlatformRecord() {
@@ -4846,37 +5349,70 @@ function StepElevenSection({
     return { plays, interactions, avgCompletion, followers: metrics.reduce((sum, item) => sum + item.followers, 0) };
   }
 
-  function importDataPlaceholder() {
-    const nextMetrics: PlatformMetric[] = [
-      { id: `metric-dy-${Date.now()}`, platform: "抖音", plays: 28000, completion_rate: 68, likes: 1800, comments: 260, favorites: 620, shares: 340, followers: 210 },
-      { id: `metric-ks-${Date.now()}`, platform: "快手", plays: 14600, completion_rate: 59, likes: 920, comments: 130, favorites: 260, shares: 108, followers: 76 },
-    ];
-    const summary = summarizeMetrics(nextMetrics);
-    setForm((current) => ({ ...current, metrics: nextMetrics, data_import_note: `已模拟导入 ${nextMetrics.length} 个平台数据；总播放 ${summary.plays}` }));
-    setStatusMessage("平台数据导入占位已完成");
+  function pausePlatformDataImport() {
+    setStatusMessage("平台数据导入/导出暂未启用，请先手动录入真实数据；AI 不生成数据占位。");
   }
 
-  function generateReviewReport() {
+  async function generateReviewReport() {
+    if (publishAction) return;
     const summary = summarizeMetrics();
-    const report = `总播放 ${summary.plays}，平均完播 ${summary.avgCompletion.toFixed(1)}%，互动 ${summary.interactions}，转粉 ${summary.followers}。亮点：开头钩子清晰；问题：中段节奏仍可压缩；优化方向：下一集加强反转前置。`;
-    setForm((current) => ({
-      ...current,
-      review_report: report,
-      retention_analysis: "开头 3 秒留存较高，中段解释段存在跳出风险。",
-      comment_summary: "观众偏好角色反差与悬念结尾，负面反馈集中在节奏偏慢。",
-      optimization_tasks: [
-        ...current.optimization_tasks,
-        { id: `opt-${Date.now()}`, target_step: "script-creation", issue: "中段节奏偏慢", suggestion: "压缩解释台词，把反转提前 8 秒", priority: "高", status: "todo" },
-      ],
-    }));
-    setStatusMessage("复盘报告已生成");
+    setPublishAction("review");
+    setStatusMessage("AI 正在生成复盘报告...");
+    try {
+      const result = await generateProjectTextTask(
+        project.name,
+        "S11_REVIEW_REPORT",
+        JSON.stringify({ metrics: form.metrics, summary, publish_copy: form.publish_copy, package: project.step_ten }, null, 2)
+      );
+      const parsed = firstJsonObject(result.content);
+      const tasks = listValue(parsed.optimization_tasks)
+        .flatMap((item, index): OptimizationTask[] => {
+          if (!item || typeof item !== "object") return [];
+          const record = item as Record<string, unknown>;
+          const priority = textValue(record.priority, "中");
+          return [{
+            id: `opt-ai-${Date.now()}-${index}`,
+            target_step: textValue(record.target_step, "script-creation") as OptimizationTask["target_step"],
+            issue: textValue(record.issue, "待优化问题"),
+            suggestion: textValue(record.suggestion, "请人工复核优化方向。"),
+            priority: (["低", "中", "高"].includes(priority) ? priority : "中") as OptimizationTask["priority"],
+            status: "todo" as const,
+          }];
+        });
+      setForm((current) => ({
+        ...current,
+        review_report: textValue(parsed.review_report, result.content),
+        retention_analysis: textValue(parsed.retention_analysis) || textValue(parsed.good_elements),
+        comment_summary: textValue(parsed.comment_summary) || textValue(parsed.needs_improvement),
+        optimization_tasks: [...current.optimization_tasks, ...tasks],
+        next_episode_suggestions: textValue(parsed.next_episode_suggestions, current.next_episode_suggestions),
+      }));
+      setStatusMessage("AI 复盘报告已生成");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "AI 复盘报告生成失败");
+    } finally {
+      setPublishAction(null);
+    }
   }
 
-  function generateNextEpisode() {
-    setForm((current) => ({
-      ...current,
-      next_episode_suggestions: "下一集建议：开场直接承接悬念，用 1 个强冲突镜头确认主角代价；保留角色关系反转；结尾抛出更大的组织线索。",
-    }));
+  async function generateNextEpisode() {
+    if (publishAction) return;
+    setPublishAction("next");
+    setStatusMessage("AI 正在生成下一集建议...");
+    try {
+      const result = await generateProjectTextTask(
+        project.name,
+        "S11_REVIEW_REPORT",
+        JSON.stringify({ current_story: project.step_one, review_report: form.review_report, metrics: form.metrics, target: "next_episode_suggestions" }, null, 2)
+      );
+      const parsed = firstJsonObject(result.content);
+      setForm((current) => ({ ...current, next_episode_suggestions: textValue(parsed.next_episode_suggestions, result.content) }));
+      setStatusMessage("AI 下一集建议已生成");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "AI 下一集建议生成失败");
+    } finally {
+      setPublishAction(null);
+    }
   }
 
   function exportReview() {
@@ -4907,11 +5443,11 @@ function StepElevenSection({
         <div className="chip-row"><span className="ghost-chip">播放 {metricSummary.plays}</span><span className="ghost-chip">完播 {metricSummary.avgCompletion.toFixed(1)}%</span></div>
       </div>
       <div className="action-row">
-        <button className="primary-pill inline-pill" type="button" onClick={generatePublishCopy}>生成发布文案</button>
+        <AIActionButton className="primary-pill inline-pill" isGenerating={publishAction === "copy"} disabled={Boolean(publishAction)} loadingLabel="AI 文案中" onClick={() => void generatePublishCopy()}>生成发布文案</AIActionButton>
         <button className="ghost-button inline-button" type="button" onClick={addPlatformRecord}>新增发布记录</button>
-        <button className="ghost-button inline-button" type="button" onClick={importDataPlaceholder}>导入数据占位</button>
-        <button className="ghost-button inline-button" type="button" onClick={generateReviewReport}>生成复盘报告</button>
-        <button className="ghost-button inline-button" type="button" onClick={generateNextEpisode}>下一集建议</button>
+        <button className="ghost-button inline-button" type="button" onClick={pausePlatformDataImport}>平台数据暂不导入</button>
+        <AIActionButton isGenerating={publishAction === "review"} disabled={Boolean(publishAction)} loadingLabel="AI 复盘中" onClick={() => void generateReviewReport()}>生成复盘报告</AIActionButton>
+        <AIActionButton isGenerating={publishAction === "next"} disabled={Boolean(publishAction)} loadingLabel="AI 建议中" onClick={() => void generateNextEpisode()}>下一集建议</AIActionButton>
         <button className="ghost-button inline-button" type="button" onClick={exportReview}>导出复盘</button>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存复盘"}</button>
       </div>

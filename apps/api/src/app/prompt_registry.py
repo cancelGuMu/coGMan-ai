@@ -204,6 +204,15 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         output_contract="输出 review_notes、issues、pass_for_storyboard，不直接改写剧本。",
         required_inputs=("project_name", "prompt"),
     ),
+    "S02_REWRITE": PromptTask(
+        task_id="S02_REWRITE",
+        step_id="script-creation",
+        model_role="text_fast",
+        system_prompt=FAST_TEXT_MODEL_SYSTEM,
+        user_instruction="按改写要求改写选中文本或目标文本，保留剧情事实、角色称谓和上下文连续性。",
+        output_contract="只返回合法 JSON：{\"rewritten_text\":\"改写后的完整可用文本\",\"change_notes\":\"改写说明\"}。",
+        required_inputs=("project_name", "prompt"),
+    ),
     "S03_ASSET_EXTRACT": PromptTask(
         task_id="S03_ASSET_EXTRACT",
         step_id="asset-setting",
@@ -371,6 +380,14 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         system_prompt=FAST_TEXT_MODEL_SYSTEM,
         user_instruction="生成字幕时间轴，字幕文本不能超过目标平台可读长度，时间轴必须在视频时长范围内。",
         output_contract="输出 subtitle_cues，包含 start_seconds、end_seconds、text、safe_area_note。",
+    ),
+    "S09_SOUND_EFFECTS": PromptTask(
+        task_id="S09_SOUND_EFFECTS",
+        step_id="audio-subtitle",
+        model_role="text_fast",
+        system_prompt=FAST_TEXT_MODEL_SYSTEM,
+        user_instruction="根据分镜、台词和视频节奏生成音效任务建议。不能生成真实音频文件，也不能假装用户已上传素材；只输出可进入工作台待制作/待导入的音效任务。",
+        output_contract="只返回合法 JSON：{\"sound_effects\":[{\"shot_label\":\"镜头标签\",\"type\":\"环境音|动作音效|转场音效\",\"description\":\"音效描述\",\"volume\":55}],\"mix_notes\":\"混音建议\"}。",
     ),
     "S10_TIMELINE": PromptTask(
         task_id="S10_TIMELINE",

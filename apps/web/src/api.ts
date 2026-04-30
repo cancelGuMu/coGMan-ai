@@ -198,6 +198,23 @@ export async function generateStepTwoContent(
   });
 }
 
+export async function generateTextTask(input: {
+  project_name: string;
+  prompt: string;
+  mode?: string;
+  task_id: string;
+}): Promise<GeneratedTextResponse> {
+  return request<GeneratedTextResponse>("/api/generate/text-task", {
+    method: "POST",
+    body: JSON.stringify({
+      project_name: input.project_name,
+      prompt: input.prompt,
+      mode: input.mode ?? "generic",
+      task_id: input.task_id,
+    }),
+  });
+}
+
 export async function generateImageCandidate(input: {
   prompt: string;
   shot_id: string;
