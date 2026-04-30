@@ -886,6 +886,23 @@ function PreviewIcon({
 }
 
 export function App() {
+  useEffect(() => {
+    function handleButtonFeedback(event: PointerEvent) {
+      const target = event.target instanceof Element
+        ? event.target.closest("button, .import-file-button, .primary-pill, .hero-button, .ghost-button, .next-step-button, .step-nav-item, .project-preview-card, .project-switch-option, .nav-link")
+        : null;
+      if (!(target instanceof HTMLElement) || target.hasAttribute("disabled") || target.getAttribute("aria-disabled") === "true") {
+        return;
+      }
+      target.classList.remove("button-click-feedback");
+      window.setTimeout(() => target.classList.add("button-click-feedback"), 0);
+      window.setTimeout(() => target.classList.remove("button-click-feedback"), 520);
+    }
+
+    window.addEventListener("pointerdown", handleButtonFeedback, true);
+    return () => window.removeEventListener("pointerdown", handleButtonFeedback, true);
+  }, []);
+
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
@@ -3276,6 +3293,7 @@ function StepTwoSection({
       ...current,
       rhythm_nodes: [...current.rhythm_nodes, nextNode],
     }));
+    setStatusMessage("已新增节奏节点。");
   }
 
   function formatScriptText(kind: "dialogue" | "narration" | "action") {
@@ -3289,6 +3307,8 @@ function StepTwoSection({
       last_modified_by: "人工",
     }));
     appendModificationRecord(`完成${kind === "dialogue" ? "对白" : kind === "narration" ? "旁白" : "动作"}标记`, "人工");
+    focusGeneratedOutput("script");
+    setStatusMessage(`${kind === "dialogue" ? "对白格式化" : kind === "narration" ? "旁白标记" : "动作标记"}已应用到剧本文本。`);
   }
 
   function snapshotScriptVersion() {
@@ -3377,7 +3397,7 @@ function StepTwoSection({
   ) {
     if (generatingMode) return;
     setGeneratingMode(mode);
-    setStatusMessage("AI 正在生成内容...");
+    setStatusMessage(`${successRecord}处理中...`);
     try {
       const chunks = buildStepTwoChunks(form);
       if (!chunks.length) {
@@ -3581,9 +3601,10 @@ function StepTwoSection({
             />
           </label>
           <div className="action-row">
-            <button
-              className="ghost-button inline-button"
-              type="button"
+            <AIActionButton
+              isGenerating={generatingMode === "reference"}
+              disabled={Boolean(generatingMode)}
+              loadingLabel="参考生成中"
               onClick={() =>
                 void applyGeneration(
                   "reference",
@@ -3594,7 +3615,7 @@ function StepTwoSection({
               }
             >
               AI 生成参考
-            </button>
+            </AIActionButton>
           </div>
 
           <label className="field-label">
@@ -3609,9 +3630,10 @@ function StepTwoSection({
           </label>
           <div className="action-row">
             <ImportFileButton label="导入正文文件" filename={form.imported_novel_name} onChange={(event) => handleImport("novel", event)} />
-            <button
-              className="ghost-button inline-button"
-              type="button"
+            <AIActionButton
+              isGenerating={generatingMode === "novel"}
+              disabled={Boolean(generatingMode)}
+              loadingLabel="正文生成中"
               onClick={() =>
                 void applyGeneration(
                   "novel",
@@ -3622,7 +3644,7 @@ function StepTwoSection({
               }
             >
               AI 生成正文
-            </button>
+            </AIActionButton>
           </div>
 
           <div className="rewrite-card">
@@ -3632,14 +3654,20 @@ function StepTwoSection({
                 <button
                   className={`mode-switch ${form.rewrite_tool.mode === "partial" ? "active" : ""}`}
                   type="button"
-                  onClick={() => setForm({ ...form, rewrite_tool: { ...form.rewrite_tool, mode: "partial" } })}
+                  onClick={() => {
+                    setForm({ ...form, rewrite_tool: { ...form.rewrite_tool, mode: "partial" } });
+                    setStatusMessage("改写模式已切换为局部改写。");
+                  }}
                 >
                   局部改写
                 </button>
                 <button
                   className={`mode-switch ${form.rewrite_tool.mode === "batch" ? "active" : ""}`}
                   type="button"
-                  onClick={() => setForm({ ...form, rewrite_tool: { ...form.rewrite_tool, mode: "batch" } })}
+                  onClick={() => {
+                    setForm({ ...form, rewrite_tool: { ...form.rewrite_tool, mode: "batch" } });
+                    setStatusMessage("改写模式已切换为批量改写。");
+                  }}
                 >
                   批量改写
                 </button>
@@ -3845,7 +3873,14 @@ function StepTwoSection({
           </label>
 
           <div className="action-row">
-            <button className="ghost-button inline-button" type="button" onClick={() => setForm(defaultStepTwoData(project.name))}>
+            <button
+              className="ghost-button inline-button"
+              type="button"
+              onClick={() => {
+                setForm(defaultStepTwoData(project.name));
+                setStatusMessage("步骤二表单已清空。");
+              }}
+            >
               清空本步骤
             </button>
             <button className="ghost-button inline-button strong" type="button" onClick={handleSave} disabled={saving}>
