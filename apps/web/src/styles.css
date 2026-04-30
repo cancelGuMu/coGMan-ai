@@ -113,7 +113,7 @@ select:focus {
 
 .home-page {
   --home-scale: 1;
-  --home-preview-scale: 0.9;
+  --home-preview-scale: 0.82;
   position: relative;
   width: 100%;
   margin: 0;
@@ -418,7 +418,7 @@ select:focus {
 
 .hero-section {
   position: relative;
-  padding: 18px 0 0;
+  padding: 28px 0 0;
 }
 
 .hero-section::after {
@@ -463,16 +463,16 @@ select:focus {
 .hero-layout {
   position: relative;
   z-index: 1;
-  min-height: calc(100vh - 220px);
+  min-height: calc(100vh - 132px);
   display: grid;
   grid-template-columns: minmax(440px, 0.88fr) minmax(0, 1.12fr);
-  align-items: start;
+  align-items: center;
   gap: 28px;
 }
 
 .hero-left {
   max-width: 680px;
-  padding: 12px 0 40px 8px;
+  padding: 20px 0 40px 8px;
   justify-self: start;
 }
 
@@ -700,7 +700,7 @@ select:focus {
 }
 
 .home-page .hero-section {
-  padding-top: calc(18px * var(--home-scale));
+  padding-top: calc(28px * var(--home-scale));
 }
 
 .home-page .hero-layout {
@@ -709,7 +709,7 @@ select:focus {
 
 .home-page .hero-left {
   max-width: calc(680px * var(--home-scale));
-  padding-top: calc(12px * var(--home-scale));
+  padding-top: calc(20px * var(--home-scale));
   padding-bottom: calc(40px * var(--home-scale));
 }
 
@@ -773,8 +773,8 @@ select:focus {
 }
 
 .home-page .hero-visual {
-  padding-top: calc(6px * var(--home-scale));
-  padding-bottom: calc(64px * var(--home-scale));
+  padding-top: calc(24px * var(--home-scale));
+  padding-bottom: calc(90px * var(--home-scale));
 }
 
 .home-page .hero-stats-wrap {
@@ -3700,7 +3700,7 @@ select:focus {
 @media (max-width: 1480px) {
   .home-page {
     --home-scale: 0.92;
-    --home-preview-scale: 0.72;
+    --home-preview-scale: 0.7;
   }
 
   .page-container {
@@ -3733,7 +3733,7 @@ select:focus {
 @media (max-width: 1280px) {
   .home-page {
     --home-scale: 0.82;
-    --home-preview-scale: 0.56;
+    --home-preview-scale: 0.58;
   }
 
   .topbar-inner {
@@ -3795,7 +3795,7 @@ select:focus {
   }
 
   .hero-visual {
-    max-width: 660px;
+    max-width: 680px;
     margin: 0 auto;
     perspective-origin: 28% 42%;
     justify-content: center;
