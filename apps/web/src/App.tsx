@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   AIActionButton,
@@ -22,7 +22,6 @@ import {
   generateImageCandidate,
   generateStepOneOutline,
   generateStepOneTask,
-  generateStepTwoContent,
   generateTextTask,
   generateVideoCandidate,
   importTextFile,
@@ -270,6 +269,94 @@ function severityValue(value: unknown): "low" | "medium" | "high" {
 
 async function generateProjectTextTask(projectName: string, taskId: string, prompt: string) {
   return generateTextTask({ project_name: projectName, task_id: taskId, mode: taskId.toLowerCase(), prompt });
+}
+
+const stepTwoTaskIds: Record<string, string> = {
+  reference: "S02_REFERENCE",
+  novel: "S02_NOVEL",
+  roles: "S02_ROLES",
+  terms: "S02_TERMS",
+  guidance: "S02_GUIDANCE",
+  script: "S02_SCRIPT",
+  check: "S02_CHECK",
+};
+
+function formatGeneratedStepTwoOutput(mode: string, raw: string): string {
+  const parsed = firstJsonObject(raw);
+  if (!Object.keys(parsed).length) return raw.trim();
+
+  if (mode === "roles") {
+    const roles = listValue(parsed.roles || parsed.characters || parsed.character_profiles);
+    const normalizedRoles = roles.length ? roles : (parsed.name || parsed.character_name ? [parsed] : []);
+    if (normalizedRoles.length) {
+      return normalizedRoles.map((item, index) => {
+        const record = item && typeof item === "object" ? item as Record<string, unknown> : {};
+        const name = textValue(record.name || record.character_name, `角色 ${index + 1}`);
+        const lines = [
+          `【${name}】`,
+          `角色定位：${textValue(record.role || record.position || record.role_position || record.type, "待补充")}`,
+          `动机：${textValue(record.motivation, "待补充")}`,
+          `性格：${textValue(record.personality, "待补充")}`,
+          `说话风格：${textValue(record.speech_style || record.speaking_style || record.dialogue_style, "待补充")}`,
+          `视觉线索：${textValue(record.visual_cues || record.visual, "待补充")}`,
+          `关系引用：${textValue(record.relationships || record.relationship_refs || record.relationship_references, "待补充")}`,
+          `置信度：${textValue(record.confidence, "待评估")}`,
+        ];
+        return lines.join("\n");
+      }).join("\n\n");
+    }
+    return textValue(parsed.character_profiles || parsed.summary, raw).trim();
+  }
+
+  if (mode === "terms") {
+    const terms = listValue(parsed.terms || parsed.terminology || parsed.items);
+    if (terms.length) {
+      return terms.map((item, index) => {
+        const record = item && typeof item === "object" ? item as Record<string, unknown> : {};
+        return [
+          `${index + 1}. ${textValue(record.term || record.name, "未命名术语")}`,
+          `类型：${textValue(record.type, "待分类")}`,
+          `定义：${textValue(record.definition || record.description, "待补充")}`,
+          `首次出现：${textValue(record.first_seen || record.first_appearance, "待确认")}`,
+          `允许别名：${textValue(record.aliases || record.allowed_aliases, "无")}`,
+          `禁用别名：${textValue(record.forbidden_aliases || record.disallowed_aliases, "无")}`,
+          `使用说明：${textValue(record.usage_note || record.notes, "无")}`,
+        ].join("\n");
+      }).join("\n\n");
+    }
+    return textValue(parsed.terminology_library || parsed.summary, raw).trim();
+  }
+
+  if (mode === "guidance") {
+    return [
+      textValue(parsed.writing_guidance || parsed.summary),
+      splitTextLines(parsed.dialogue_rules).length ? `对白规则：\n${splitTextLines(parsed.dialogue_rules).map((item) => `- ${item}`).join("\n")}` : "",
+      splitTextLines(parsed.narration_rules).length ? `旁白规则：\n${splitTextLines(parsed.narration_rules).map((item) => `- ${item}`).join("\n")}` : "",
+      splitTextLines(parsed.pacing_rules).length ? `节奏规则：\n${splitTextLines(parsed.pacing_rules).map((item) => `- ${item}`).join("\n")}` : "",
+      splitTextLines(parsed.do_not).length ? `禁用项：\n${splitTextLines(parsed.do_not).map((item) => `- ${item}`).join("\n")}` : "",
+    ].filter(Boolean).join("\n\n") || raw.trim();
+  }
+
+  if (mode === "reference") {
+    return [
+      textValue(parsed.reference_summary || parsed.summary),
+      splitTextLines(parsed.usable_plots || parsed.key_beats).length ? `可用情节：\n${splitTextLines(parsed.usable_plots || parsed.key_beats).map((item) => `- ${item}`).join("\n")}` : "",
+      splitTextLines(parsed.style_tips || parsed.style_notes).length ? `风格提示：\n${splitTextLines(parsed.style_tips || parsed.style_notes).map((item) => `- ${item}`).join("\n")}` : "",
+      splitTextLines(parsed.risks || parsed.risk_tips).length ? `风险提示：\n${splitTextLines(parsed.risks || parsed.risk_tips).map((item) => `- ${item}`).join("\n")}` : "",
+    ].filter(Boolean).join("\n\n") || raw.trim();
+  }
+
+  if (mode === "novel") return textValue(parsed.novel_text, raw).trim();
+  if (mode === "script") return textValue(parsed.script_text || parsed.script, raw).trim();
+  if (mode === "check") {
+    return [
+      textValue(parsed.review_notes || parsed.summary),
+      splitTextLines(parsed.issues).length ? `问题：\n${splitTextLines(parsed.issues).map((item) => `- ${item}`).join("\n")}` : "",
+      typeof parsed.pass_for_storyboard === "boolean" ? `是否可进入分镜：${parsed.pass_for_storyboard ? "是" : "否"}` : "",
+    ].filter(Boolean).join("\n\n") || raw.trim();
+  }
+
+  return raw.trim();
 }
 
 function renderRollingMetricValue(value: string) {
@@ -2227,6 +2314,7 @@ function CreativeWorkspaceContent({
   summaryCaption?: string;
 }) {
   const activeStep = workflowSteps.find((step) => step.id === activeStepId) ?? workflowSteps[0];
+  const navigate = useNavigate();
 
   return (
     <div className={shellClassName}>
@@ -2279,6 +2367,7 @@ function CreativeWorkspaceContent({
               onProjectSaved(mergeProjectDefaults(nextProject), message);
             }}
             setStatusMessage={setStatusMessage}
+            onNavigateStep={(stepId) => navigate(createCenterPath(stepId, project.id))}
           />
         ) : null}
 
@@ -2289,6 +2378,7 @@ function CreativeWorkspaceContent({
               onProjectSaved(mergeProjectDefaults(nextProject), message);
             }}
             setStatusMessage={setStatusMessage}
+            onNavigateStep={(stepId) => navigate(createCenterPath(stepId, project.id))}
           />
         ) : null}
 
@@ -2478,10 +2568,12 @@ function StepOneSection({
   project,
   onSaved,
   setStatusMessage,
+  onNavigateStep,
 }: {
   project: ProjectRecord;
   onSaved: (project: ProjectRecord, message: string) => void;
   setStatusMessage: (message: string) => void;
+  onNavigateStep: (stepId: string) => void;
 }) {
   const [form, setForm] = useState<StepOneData>(project.step_one);
   const [saving, setSaving] = useState(false);
@@ -2637,6 +2729,29 @@ function StepOneSection({
       onSaved(saved, "步骤一数据已保存并自动关联项目");
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleGoNextStep() {
+    if (!form.core_story_idea.trim()) {
+      setStatusMessage("请先填写核心故事思路。");
+      return;
+    }
+    setSaving(true);
+    setStatusMessage("正在保存步骤一并进入步骤二...");
+    try {
+      const saved = await saveStepOne(project.id, {
+        ...form,
+        project_name: form.project_name || project.name,
+        linked_project: true,
+      });
+      setIsDirty(false);
+      onSaved(saved, "步骤一已保存，正在进入步骤二。");
+      onNavigateStep("script-creation");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "进入步骤二失败");
     } finally {
       setSaving(false);
     }
@@ -2865,8 +2980,8 @@ function StepOneSection({
               {saving ? "保存中..." : "保存当前步骤"}
             </button>
             <NextStepButton
-              disabled={!form.core_story_idea.trim()}
-              onClick={() => setStatusMessage(form.core_story_idea.trim() ? "步骤一基础信息已具备，可以保存后进入剧本创作。" : "请先填写核心故事思路。")}
+              disabled={!form.core_story_idea.trim() || saving}
+              onClick={() => void handleGoNextStep()}
             />
           </div>
 
@@ -3063,14 +3178,23 @@ function StepTwoSection({
   project,
   onSaved,
   setStatusMessage,
+  onNavigateStep,
 }: {
   project: ProjectRecord;
   onSaved: (project: ProjectRecord, message: string) => void;
   setStatusMessage: (message: string) => void;
+  onNavigateStep: (stepId: string) => void;
 }) {
   const [form, setForm] = useState<StepTwoData>(project.step_two);
   const [saving, setSaving] = useState(false);
   const [generatingMode, setGeneratingMode] = useState<string | null>(null);
+  const characterProfilesRef = useRef<HTMLTextAreaElement | null>(null);
+  const terminologyRef = useRef<HTMLTextAreaElement | null>(null);
+  const guidanceRef = useRef<HTMLTextAreaElement | null>(null);
+  const referenceRef = useRef<HTMLTextAreaElement | null>(null);
+  const novelRef = useRef<HTMLTextAreaElement | null>(null);
+  const scriptRef = useRef<HTMLTextAreaElement | null>(null);
+  const reviewRef = useRef<HTMLTextAreaElement | null>(null);
   const selectedEpisode =
     project.step_one.episodes.find((episode) => episode.episode_number === form.selected_episode_number) ??
     project.step_one.episodes[0] ??
@@ -3122,6 +3246,23 @@ function StepTwoSection({
       last_modified_by: modifiedBy,
       modification_records: [...current.modification_records, record],
     }));
+  }
+
+  function focusGeneratedOutput(mode: string) {
+    const outputRefMap: Record<string, RefObject<HTMLTextAreaElement | null>> = {
+      roles: characterProfilesRef,
+      terms: terminologyRef,
+      guidance: guidanceRef,
+      reference: referenceRef,
+      novel: novelRef,
+      script: scriptRef,
+      check: reviewRef,
+    };
+    window.setTimeout(() => {
+      const target = outputRefMap[mode]?.current;
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+      target?.focus({ preventScroll: true });
+    }, 50);
   }
 
   function addRhythmNode() {
@@ -3247,12 +3388,18 @@ function StepTwoSection({
       for (let index = 0; index < chunks.length; index += 1) {
         const chunk = chunks[index];
         setStatusMessage(`AI 正在处理第 ${index + 1}/${chunks.length} 段...`);
-        const result = await generateStepTwoContent(project.name, `${chunk.label}\n${chunk.content}`, mode);
+        const result = await generateProjectTextTask(project.name, stepTwoTaskIds[mode] ?? "S02_SCRIPT", `${chunk.label}\n${chunk.content}`);
         partials.push(result.content);
       }
-      setter(mergeChunkResults(partials));
+      const output = formatGeneratedStepTwoOutput(mode, mergeChunkResults(partials));
+      if (!output.trim()) {
+        setStatusMessage("AI 已返回，但没有可写入的有效内容，请调整输入后重试。");
+        return;
+      }
+      setter(output);
       appendModificationRecord(successRecord, "AI");
-      setStatusMessage("AI 生成完成");
+      focusGeneratedOutput(mode);
+      setStatusMessage(`${successRecord}，结果已写入右侧对应输出框。`);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "AI 生成失败");
     } finally {
@@ -3281,6 +3428,31 @@ function StepTwoSection({
   }
 
   const canGoStepThree = form.script_text.trim().length > 0;
+
+  async function handleGoStepThree() {
+    if (!canGoStepThree) {
+      setStatusMessage("剧本文本为空，暂时不能进入步骤三");
+      return;
+    }
+    setSaving(true);
+    setStatusMessage("正在保存步骤二并进入步骤三...");
+    try {
+      const nextData = {
+        ...form,
+        project_name: form.project_name || project.name,
+        current_episode_context:
+          selectedEpisode ? `第 ${selectedEpisode.episode_number} 集：${selectedEpisode.title}；${selectedEpisode.content}；钩子：${selectedEpisode.hook}` : "",
+        last_modified_by: form.last_modified_by || "人工",
+      };
+      const saved = await saveStepTwo(project.id, nextData);
+      onSaved(saved, "步骤二已保存，正在进入步骤三。");
+      onNavigateStep("asset-setting");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "进入步骤三失败");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <section className="editor-section" id="script-creation">
@@ -3401,6 +3573,7 @@ function StepTwoSection({
           <label className="field-label">
             <span>参考文本</span>
             <textarea
+              ref={referenceRef}
               rows={4}
               value={form.reference_text}
               onChange={(event) => setForm({ ...form, reference_text: event.target.value })}
@@ -3427,6 +3600,7 @@ function StepTwoSection({
           <label className="field-label">
             <span>小说正文</span>
             <textarea
+              ref={novelRef}
               rows={8}
               value={form.novel_text}
               onChange={(event) => setForm({ ...form, novel_text: event.target.value })}
@@ -3552,6 +3726,7 @@ function StepTwoSection({
           <label className="field-label">
             <span>角色画像</span>
             <textarea
+              ref={characterProfilesRef}
               rows={4}
               value={form.character_profiles}
               onChange={(event) => setForm({ ...form, character_profiles: event.target.value })}
@@ -3561,6 +3736,7 @@ function StepTwoSection({
           <label className="field-label">
             <span>术语库</span>
             <textarea
+              ref={terminologyRef}
               rows={4}
               value={form.terminology_library}
               onChange={(event) => setForm({ ...form, terminology_library: event.target.value })}
@@ -3570,6 +3746,7 @@ function StepTwoSection({
           <label className="field-label">
             <span>写作指导</span>
             <textarea
+              ref={guidanceRef}
               rows={4}
               value={form.writing_guidance}
               onChange={(event) => setForm({ ...form, writing_guidance: event.target.value })}
@@ -3623,6 +3800,7 @@ function StepTwoSection({
           <label className="field-label">
             <span>剧本文本</span>
             <textarea
+              ref={scriptRef}
               rows={10}
               value={form.script_text}
               onChange={(event) => {
@@ -3658,6 +3836,7 @@ function StepTwoSection({
           <label className="field-label">
             <span>整集审核意见</span>
             <textarea
+              ref={reviewRef}
               rows={5}
               value={form.review_notes}
               onChange={(event) => setForm({ ...form, review_notes: event.target.value })}
@@ -3685,9 +3864,8 @@ function StepTwoSection({
             <button
               className={`ghost-button inline-button ${canGoStepThree ? "strong" : "disabled"}`}
               type="button"
-              onClick={() =>
-                setStatusMessage(canGoStepThree ? "当前已满足进入步骤三的条件" : "剧本文本为空，暂时不能进入步骤三")
-              }
+              onClick={() => void handleGoStepThree()}
+              disabled={saving}
             >
               进入步骤三
             </button>

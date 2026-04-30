@@ -147,7 +147,7 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         model_role="text_fast",
         system_prompt=FAST_TEXT_MODEL_SYSTEM,
         user_instruction="生成可供剧本创作参考的文本方向，保留关键名词和风格要求。",
-        output_contract="输出参考摘要、可用情节、风格提示、风险提示。",
+        output_contract='只返回合法 JSON：{"reference_summary":"参考摘要","usable_plots":["可用情节"],"style_tips":["风格提示"],"risks":["风险提示"]}。',
         required_inputs=("project_name", "prompt"),
     ),
     "S02_NOVEL": PromptTask(
@@ -156,7 +156,7 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         model_role="text_planner",
         system_prompt=TEXT_MODEL_SYSTEM,
         user_instruction="生成本集小说正文样稿，保留本集核心事件和结尾悬念，语言适配短剧/漫剧节奏。",
-        output_contract="输出 novel_text、key_beats、dialogue_candidates、adaptation_notes。",
+        output_contract='只返回合法 JSON：{"novel_text":"完整正文","key_beats":["关键节拍"],"dialogue_candidates":["对白候选"],"adaptation_notes":"改编说明"}。',
         required_inputs=("project_name", "prompt"),
     ),
     "S02_ROLES": PromptTask(
@@ -165,7 +165,7 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         model_role="text_planner",
         system_prompt=TEXT_MODEL_SYSTEM,
         user_instruction="从素材、故事和剧本中提炼角色画像，供资产设定生成角色卡初稿使用。",
-        output_contract="输出姓名、角色定位、动机、性格、说话风格、视觉线索、关系引用和置信度。",
+        output_contract='只返回合法 JSON：{"roles":[{"name":"姓名","role":"角色定位","motivation":"动机","personality":"性格","speech_style":"说话风格","visual_cues":"视觉线索","relationships":"关系引用","confidence":0.8}]}。',
         required_inputs=("project_name", "prompt"),
     ),
     "S02_TERMS": PromptTask(
@@ -174,7 +174,7 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         model_role="text_fast",
         system_prompt=FAST_TEXT_MODEL_SYSTEM,
         user_instruction="整理术语库，术语必须可复用到剧本、资产、提示词。",
-        output_contract="输出术语、类型、定义、首次出现、允许别名、禁用别名、使用说明。",
+        output_contract='只返回合法 JSON：{"terms":[{"term":"术语","type":"类型","definition":"定义","first_seen":"首次出现","allowed_aliases":["允许别名"],"forbidden_aliases":["禁用别名"],"usage_note":"使用说明"}]}。',
         required_inputs=("project_name", "prompt"),
     ),
     "S02_GUIDANCE": PromptTask(
@@ -183,7 +183,7 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         model_role="text_planner",
         system_prompt=TEXT_MODEL_SYSTEM,
         user_instruction="生成本集剧本写作指导，落到对白、旁白、节奏和镜头友好性。",
-        output_contract="输出 writing_guidance、dialogue_rules、narration_rules、pacing_rules、do_not。",
+        output_contract='只返回合法 JSON：{"writing_guidance":"总指导","dialogue_rules":["对白规则"],"narration_rules":["旁白规则"],"pacing_rules":["节奏规则"],"do_not":["禁用项"]}。',
         required_inputs=("project_name", "prompt"),
     ),
     "S02_SCRIPT": PromptTask(
@@ -192,7 +192,7 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         model_role="text_planner",
         system_prompt=TEXT_MODEL_SYSTEM,
         user_instruction="生成可拆分镜头、可配音、可剪辑的正式漫剧剧本。",
-        output_contract="每段包含场景、角色、对白/旁白、动作、情绪、停顿和视觉提示；开头有钩子，结尾有悬念。",
+        output_contract='只返回合法 JSON：{"script_text":"完整剧本文本","scenes":[{"scene":"场景","characters":["角色"],"dialogue":"对白/旁白","action":"动作","emotion":"情绪","pause":"停顿","visual_prompt":"视觉提示"}],"ending_hook":"结尾悬念"}。',
         required_inputs=("project_name", "prompt"),
     ),
     "S02_CHECK": PromptTask(
@@ -201,7 +201,7 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         model_role="reviewer",
         system_prompt=REVIEW_MODEL_SYSTEM,
         user_instruction="做人物动机、称谓、设定、时间线、剧情承接和可生产性检查。",
-        output_contract="输出 review_notes、issues、pass_for_storyboard，不直接改写剧本。",
+        output_contract='只返回合法 JSON：{"review_notes":"审核意见","issues":["问题"],"pass_for_storyboard":true}，不直接改写剧本。',
         required_inputs=("project_name", "prompt"),
     ),
     "S02_REWRITE": PromptTask(
