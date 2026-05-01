@@ -243,7 +243,7 @@ export async function fetchVideoTaskStatus(taskId: string): Promise<{ task: Reco
   return request<{ task: Record<string, unknown> }>(`/api/generate/video/${encodeURIComponent(taskId)}`);
 }
 
-export async function importTextFile(file: File): Promise<{ filename: string; content: string }> {
+export async function importTextFile(file: File): Promise<{ filename: string; content: string; parse_status?: string | null }> {
   if (file.size > MAX_IMPORT_FILE_BYTES) {
     throw new Error("导入文件过大，请压缩内容后再试。");
   }
@@ -262,7 +262,7 @@ export async function importTextFile(file: File): Promise<{ filename: string; co
     throw new Error("文件导入失败");
   }
 
-  return response.json() as Promise<{ filename: string; content: string }>;
+  return response.json() as Promise<{ filename: string; content: string; parse_status?: string | null }>;
 }
 
 export async function fetchDashboardOverview(range: DashboardRange): Promise<DashboardOverview> {

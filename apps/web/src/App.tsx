@@ -2965,7 +2965,7 @@ function StepOneSection({
             <textarea
               value={form.core_story_idea}
               onChange={(event) => updateForm({ ...form, core_story_idea: event.target.value })}
-              placeholder="输入核心故事思路，或导入 .txt / .md / .docx 文件"
+              placeholder="输入核心故事思路，或导入 .txt / .md / .docx / .csv / .srt 文件"
               rows={7}
             />
           </label>
@@ -3563,7 +3563,7 @@ function StepTwoSection({
           </label>
 
           <div className="action-row">
-            <ImportFileButton label="导入素材文件" filename={form.imported_source_name} accept=".txt,.md,.json,.docx" onChange={(event) => handleImport("source", event)} />
+            <ImportFileButton label="导入素材文件" filename={form.imported_source_name} onChange={(event) => handleImport("source", event)} />
             <AIActionButton
               isGenerating={generatingMode === "roles"}
               disabled={Boolean(generatingMode)}

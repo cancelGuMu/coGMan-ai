@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
+from io import BytesIO
 import os
 from pathlib import Path
+import re
+from xml.etree import ElementTree
+from zipfile import BadZipFile, ZipFile
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,6 +71,26 @@ from .storage import (
 MAX_IMPORT_BYTES = 8 * 1024 * 1024
 MAX_IMPORT_TEXT_CHARS = 180_000
 DASHBOARD_DATA_FILE = Path(__file__).resolve().parents[2] / "data" / "dashboard.json"
+TEXT_IMPORT_SUFFIXES = {
+    ".txt",
+    ".md",
+    ".markdown",
+    ".json",
+    ".csv",
+    ".tsv",
+    ".rtf",
+    ".srt",
+    ".vtt",
+    ".log",
+}
+WORD_IMPORT_SUFFIXES = {".docx"}
+UNSUPPORTED_BINARY_IMPORT_SUFFIXES = {".doc", ".pdf", ".xlsx", ".xls", ".pptx", ".ppt"}
+
+
+@dataclass(frozen=True)
+class ImportedText:
+    content: str
+    parse_status: str
 
 DASHBOARD_FALLBACK = {
     "7d": {
@@ -137,6 +162,89 @@ app.add_middleware(
 
 def _clip_text(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit]
+
+
+def _normalize_import_text(text: str) -> str:
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _decode_text_file(raw: bytes) -> ImportedText:
+    for encoding in ("utf-8-sig", "utf-16", "utf-16-le", "utf-16-be", "gb18030", "big5", "latin-1"):
+        try:
+            text = raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+        normalized = _normalize_import_text(text)
+        if normalized:
+            return ImportedText(normalized, f"text/{encoding}")
+    return ImportedText("", "text/empty")
+
+
+def _rtf_to_plain_text(text: str) -> str:
+    text = re.sub(r"{\\[^{}]+}|[{}]", " ", text)
+    text = re.sub(r"\\'[0-9a-fA-F]{2}", " ", text)
+    text = re.sub(r"\\[a-zA-Z]+-?\d* ?", " ", text)
+    text = text.replace("\\par", "\n").replace("\\tab", "\t")
+    return _normalize_import_text(text)
+
+
+def _docx_xml_to_text(xml_bytes: bytes) -> str:
+    namespace = {
+        "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+    }
+    root = ElementTree.fromstring(xml_bytes)
+    paragraphs: list[str] = []
+    for paragraph in root.findall(".//w:p", namespace):
+        parts: list[str] = []
+        for node in paragraph.iter():
+            tag = node.tag.rsplit("}", 1)[-1]
+            if tag in {"t", "delText", "instrText"} and node.text:
+                parts.append(node.text)
+            elif tag == "tab":
+                parts.append("\t")
+            elif tag in {"br", "cr"}:
+                parts.append("\n")
+        line = "".join(parts).strip()
+        if line:
+            paragraphs.append(line)
+    return "\n".join(paragraphs)
+
+
+def _extract_docx_text(raw: bytes) -> ImportedText:
+    try:
+        with ZipFile(BytesIO(raw)) as archive:
+            document_names = [
+                "word/document.xml",
+                *sorted(name for name in archive.namelist() if name.startswith("word/header") and name.endswith(".xml")),
+                *sorted(name for name in archive.namelist() if name.startswith("word/footer") and name.endswith(".xml")),
+            ]
+            chunks = [_docx_xml_to_text(archive.read(name)) for name in document_names if name in archive.namelist()]
+    except (BadZipFile, ElementTree.ParseError, KeyError) as exc:
+        raise HTTPException(status_code=400, detail="Word 文档解析失败，请确认文件是有效的 .docx 格式。") from exc
+
+    text = _normalize_import_text("\n\n".join(chunk for chunk in chunks if chunk.strip()))
+    if not text:
+        raise HTTPException(status_code=400, detail="Word 文档中没有可导入的文本内容。")
+    return ImportedText(text, "docx")
+
+
+def _extract_import_text(filename: str, raw: bytes) -> ImportedText:
+    suffix = Path(filename).suffix.lower()
+    if suffix in WORD_IMPORT_SUFFIXES:
+        return _extract_docx_text(raw)
+    if suffix in TEXT_IMPORT_SUFFIXES or not suffix:
+        decoded = _decode_text_file(raw)
+        if suffix == ".rtf":
+            return ImportedText(_rtf_to_plain_text(decoded.content), "rtf")
+        return decoded
+    if suffix in UNSUPPORTED_BINARY_IMPORT_SUFFIXES:
+        raise HTTPException(status_code=415, detail=f"暂不支持 {suffix} 二进制文件导入，请先另存为 .docx、.txt 或 .md 后再上传。")
+    decoded = _decode_text_file(raw)
+    if decoded.content:
+        return decoded
+    raise HTTPException(status_code=415, detail="暂不支持该文件格式，请上传 .txt、.md、.json、.csv、.srt、.vtt、.rtf 或 .docx 文件。")
 
 
 def _read_dashboard_data() -> dict:
@@ -483,10 +591,14 @@ def api_get_video_task(task_id: str) -> VideoTaskStatusResponse:
 
 
 @app.post("/api/import/text")
-async def import_text_file(file: UploadFile = File(...)) -> dict[str, str]:
+async def import_text_file(file: UploadFile = File(...)) -> dict[str, str | None]:
     raw = await file.read()
-    if len(raw) > MAX_IMPORT_BYTES:
-        raise HTTPException(status_code=413, detail="导入文件过大，请控制在 2MB 以内")
-    text = raw.decode("utf-8", errors="ignore")
     filename = Path(file.filename or "uploaded.txt").name
-    return {"filename": filename[:255], "content": _clip_text(text, MAX_IMPORT_TEXT_CHARS)}
+    if len(raw) > MAX_IMPORT_BYTES:
+        raise HTTPException(status_code=413, detail=f"导入文件过大，请控制在 {MAX_IMPORT_BYTES // 1024 // 1024}MB 以内。")
+    imported = _extract_import_text(filename, raw)
+    return {
+        "filename": filename[:255],
+        "content": _clip_text(imported.content, MAX_IMPORT_TEXT_CHARS),
+        "parse_status": imported.parse_status,
+    }

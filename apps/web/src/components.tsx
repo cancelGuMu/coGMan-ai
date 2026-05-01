@@ -272,7 +272,7 @@ export function AIActionButton({
 export function ImportFileButton({
   label = "导入文件",
   filename,
-  accept = ".txt,.md,.docx",
+  accept = ".txt,.md,.markdown,.json,.csv,.tsv,.rtf,.srt,.vtt,.docx",
   onChange,
 }: {
   label?: string;
