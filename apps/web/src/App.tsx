@@ -51,6 +51,9 @@ import {
 import type {
   DashboardOverview,
   DashboardRange,
+  AssetCharacter,
+  AssetProp,
+  AssetScene,
   DialogueLine,
   EpisodeDraft,
   ExportVersion,
@@ -4164,6 +4167,210 @@ function StepThreeSection({
     setStatusMessage?.("角色已删除，保存资产后生效");
   }
 
+  function updateCharacter(characterId: string, patch: Partial<AssetCharacter>) {
+    setAssetLibrary((current) => ({
+      ...current,
+      characters: current.characters.map((item) => (item.id === characterId ? { ...item, ...patch } : item)),
+    }));
+  }
+
+  function addScene() {
+    setAssetLibrary((current) => ({
+      ...current,
+      scenes: [
+        ...current.scenes,
+        {
+          id: `scene-${Date.now()}`,
+          name: `场景 ${current.scenes.length + 1}`,
+          location: "",
+          atmosphere: "",
+          episodes: String(project.step_two.selected_episode_number || 1),
+        },
+      ],
+    }));
+    setStatusMessage?.("已新增场景卡，保存资产后生效。");
+  }
+
+  function updateScene(sceneId: string, patch: Partial<AssetScene>) {
+    setAssetLibrary((current) => ({
+      ...current,
+      scenes: current.scenes.map((item) => (item.id === sceneId ? { ...item, ...patch } : item)),
+    }));
+  }
+
+  function removeScene(sceneId: string) {
+    const target = assetLibrary.scenes.find((item) => item.id === sceneId);
+    const confirmed = window.confirm(`确认删除场景“${target?.name || "未命名场景"}”吗？删除后会影响后续分镜和提示词引用。`);
+    if (!confirmed) return;
+    setAssetLibrary((current) => ({
+      ...current,
+      scenes: current.scenes.filter((item) => item.id !== sceneId),
+    }));
+    setStatusMessage?.("场景已删除，保存资产后生效。");
+  }
+
+  function addProp() {
+    setAssetLibrary((current) => ({
+      ...current,
+      props: [
+        ...current.props,
+        {
+          id: `prop-${Date.now()}`,
+          name: `道具 ${current.props.length + 1}`,
+          type: "剧情道具",
+          story_function: "",
+        },
+      ],
+    }));
+    setStatusMessage?.("已新增道具卡，保存资产后生效。");
+  }
+
+  function updateProp(propId: string, patch: Partial<AssetProp>) {
+    setAssetLibrary((current) => ({
+      ...current,
+      props: current.props.map((item) => (item.id === propId ? { ...item, ...patch } : item)),
+    }));
+  }
+
+  function removeProp(propId: string) {
+    const target = assetLibrary.props.find((item) => item.id === propId);
+    const confirmed = window.confirm(`确认删除道具“${target?.name || "未命名道具"}”吗？删除后会影响后续分镜和提示词引用。`);
+    if (!confirmed) return;
+    setAssetLibrary((current) => ({
+      ...current,
+      props: current.props.filter((item) => item.id !== propId),
+    }));
+    setStatusMessage?.("道具已删除，保存资产后生效。");
+  }
+
+  function getAssetSourceText() {
+    return [
+      "故事结构：",
+      project.step_one.season_outline || project.step_one.core_story_idea,
+      "角色关系：",
+      project.step_one.relationship_notes,
+      "剧本/正文/素材：",
+      project.step_two.script_text || project.step_two.novel_text || project.step_two.source_material,
+      "现有资产库：",
+      JSON.stringify(assetLibrary, null, 2),
+    ].join("\n");
+  }
+
+  async function generateAssetCards(kind: "character" | "scene" | "prop") {
+    if (aiAction) return;
+    const taskMap = {
+      character: "S03_CHARACTER_CARDS",
+      scene: "S03_SCENE_CARDS",
+      prop: "S03_PROP_CARDS",
+    };
+    const labelMap = {
+      character: "角色卡",
+      scene: "场景卡",
+      prop: "道具卡",
+    };
+    setAiAction(`generate-${kind}`);
+    setStatusMessage?.(`AI 正在生成${labelMap[kind]}...`);
+    try {
+      const result = await generateProjectTextTask(project.name, taskMap[kind], getAssetSourceText());
+      const parsed = firstJsonObject(result.content);
+      const records = listValue(
+        kind === "character"
+          ? parsed.characters || parsed.roles || parsed.character_cards
+          : kind === "scene"
+            ? parsed.scenes || parsed.scene_cards
+            : parsed.props || parsed.prop_cards
+      );
+      if (!records.length) {
+        setStatusMessage?.(`AI 已返回，但没有可写入的${labelMap[kind]}。`);
+        return;
+      }
+      setAssetLibrary((current) => {
+        if (kind === "character") {
+          const characters = records.flatMap((item, index): AssetCharacter[] => {
+            if (!item || typeof item !== "object") return [];
+            const record = item as Record<string, unknown>;
+            return [{
+              id: `char-ai-${Date.now()}-${index}`,
+              name: textValue(record.name || record.character_name, `角色 ${current.characters.length + index + 1}`),
+              role: textValue(record.role || record.position, "待设定"),
+              age: textValue(record.age),
+              personality: textValue(record.personality),
+              appearance: textValue(record.appearance || record.visual_design || record.visual_cues),
+              motivation: textValue(record.motivation || record.story_function),
+              outfit: textValue(record.outfit || record.costume),
+            }];
+          });
+          return { ...current, characters: [...current.characters, ...characters] };
+        }
+        if (kind === "scene") {
+          const scenes = records.flatMap((item, index): AssetScene[] => {
+            if (!item || typeof item !== "object") return [];
+            const record = item as Record<string, unknown>;
+            return [{
+              id: `scene-ai-${Date.now()}-${index}`,
+              name: textValue(record.name || record.scene_name, `场景 ${current.scenes.length + index + 1}`),
+              location: textValue(record.location || record.spatial_layout),
+              atmosphere: textValue(record.atmosphere || record.lighting || record.description),
+              episodes: textValue(record.episodes || record.first_seen, String(project.step_two.selected_episode_number || 1)),
+            }];
+          });
+          return { ...current, scenes: [...current.scenes, ...scenes] };
+        }
+        const props = records.flatMap((item, index): AssetProp[] => {
+          if (!item || typeof item !== "object") return [];
+          const record = item as Record<string, unknown>;
+          return [{
+            id: `prop-ai-${Date.now()}-${index}`,
+            name: textValue(record.name || record.prop_name, `道具 ${current.props.length + index + 1}`),
+            type: textValue(record.type || record.category, "剧情道具"),
+            story_function: textValue(record.story_function || record.description || record.visual_design),
+          }];
+        });
+        return { ...current, props: [...current.props, ...props] };
+      });
+      setStatusMessage?.(`AI 已生成 ${records.length} 条${labelMap[kind]}，请检查后保存资产。`);
+    } catch (err) {
+      setStatusMessage?.(err instanceof Error ? err.message : `AI ${labelMap[kind]}生成失败`);
+    } finally {
+      setAiAction(null);
+    }
+  }
+
+  async function generateStyleSupport(kind: "style" | "rules") {
+    if (aiAction) return;
+    const taskId = kind === "style" ? "S03_STYLE_BOARD" : "S03_CONSISTENCY_RULES";
+    const label = kind === "style" ? "风格板" : "一致性规则";
+    setAiAction(`generate-${kind}`);
+    setStatusMessage?.(`AI 正在生成${label}...`);
+    try {
+      const result = await generateProjectTextTask(project.name, taskId, getAssetSourceText());
+      const parsed = firstJsonObject(result.content);
+      const content =
+        kind === "style"
+          ? [
+              textValue(parsed.art_style),
+              textValue(parsed.color_palette),
+              textValue(parsed.lighting_rules),
+              textValue(parsed.camera_texture),
+              textValue(parsed.prompt_style_block),
+            ].filter(Boolean).join("\n")
+          : textValue(parsed.consistency_rules || parsed.rules || parsed.prompt_text, result.content);
+      if (!content.trim()) {
+        setStatusMessage?.(`AI 已返回，但没有可写入的${label}内容。`);
+        return;
+      }
+      setAssetLibrary((current) => ({
+        ...current,
+        ...(kind === "style" ? { style_board: content } : { consistency_rules: content }),
+      }));
+      setStatusMessage?.(`AI 已生成${label}，请检查后保存资产。`);
+    } catch (err) {
+      setStatusMessage?.(err instanceof Error ? err.message : `AI ${label}生成失败`);
+    } finally {
+      setAiAction(null);
+    }
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -4187,7 +4394,7 @@ function StepThreeSection({
         <div>
           <span className="eyebrow">步骤三</span>
           <h2>资产设定</h2>
-          <p>资产库结构、后端存储字段和页面骨架已建立，后续可继续接入剧本资产提取与角色/场景/道具编辑。</p>
+          <p>资产候选从步骤一故事结构、角色关系，以及步骤二剧本、正文或素材中提取；也可以手动新建并用 AI 补全角色、场景、道具和一致性规则。</p>
         </div>
         <div className="chip-row">
           <span className="ghost-chip">角色 {assetLibrary.characters.length}</span>
@@ -4201,6 +4408,7 @@ function StepThreeSection({
         left={
           <div className="panel-card asset-rail-card">
             <h3>资产分类</h3>
+            <p className="asset-empty-copy">提取来源：步骤一「季纲/核心故事/人物关系」和步骤二「剧本文本/小说正文/素材」。</p>
             {summaryCards.map((card) => (
               <div className="asset-category-row" key={card.label}>
                 <strong>{card.label}</strong>
@@ -4217,6 +4425,30 @@ function StepThreeSection({
               >
                 提取资产
               </AIActionButton>
+              <AIActionButton
+                isGenerating={aiAction === "generate-character"}
+                disabled={Boolean(aiAction)}
+                loadingLabel="角色生成中"
+                onClick={() => void generateAssetCards("character")}
+              >
+                AI 生成角色
+              </AIActionButton>
+              <AIActionButton
+                isGenerating={aiAction === "generate-scene"}
+                disabled={Boolean(aiAction)}
+                loadingLabel="场景生成中"
+                onClick={() => void generateAssetCards("scene")}
+              >
+                AI 生成场景
+              </AIActionButton>
+              <AIActionButton
+                isGenerating={aiAction === "generate-prop"}
+                disabled={Boolean(aiAction)}
+                loadingLabel="道具生成中"
+                onClick={() => void generateAssetCards("prop")}
+              >
+                AI 生成道具
+              </AIActionButton>
               <button className="ghost-button inline-button" type="button" onClick={addSelectedCandidates}>
                 加入资产库
               </button>
@@ -4230,12 +4462,14 @@ function StepThreeSection({
           <div className="panel-card">
             <div className="rewrite-head">
               <h3>待提取资产候选</h3>
-              <button className="ghost-button inline-button" type="button" onClick={addCharacter}>
-                新增角色
-              </button>
+              <div className="chip-row">
+                <button className="ghost-button inline-button" type="button" onClick={addCharacter}>新增角色</button>
+                <button className="ghost-button inline-button" type="button" onClick={addScene}>新增场景</button>
+                <button className="ghost-button inline-button" type="button" onClick={addProp}>新增道具</button>
+              </div>
             </div>
             <p className="asset-empty-copy">
-              当前步骤三已经具备页面骨架和数据入口。下一批任务将从剧本文本中提取角色、场景、道具候选，并允许勾选加入资产库。
+              AI 提取会先生成候选，勾选后点「加入资产库」。手动新增和 AI 生成的资产会直接进入下方可编辑列表。
             </p>
             <div className="asset-placeholder-grid">
               {assetLibrary.candidates.length ? assetLibrary.candidates.map((item) => (
@@ -4266,21 +4500,129 @@ function StepThreeSection({
               ))}
             </div>
             <div className="overview-list relationship-list">
+              <h4>角色卡</h4>
               {assetLibrary.characters.map((item) => (
-                <div className="overview-item" key={item.id}>
-                  <strong>{item.name} · {item.role}</strong>
-                  <span>{item.personality || "待补充性格"} / {item.motivation || "待补充动机"}</span>
-                  <button className="ghost-mini-button" type="button" onClick={() => removeCharacter(item.id)}>
-                    删除角色
-                  </button>
+                <div className="overview-item asset-edit-card" key={item.id}>
+                  <div className="field-row">
+                    <label className="field-label">
+                      <span>角色名</span>
+                      <input value={item.name} onChange={(event) => updateCharacter(item.id, { name: event.target.value })} />
+                    </label>
+                    <label className="field-label">
+                      <span>定位</span>
+                      <input value={item.role} onChange={(event) => updateCharacter(item.id, { role: event.target.value })} />
+                    </label>
+                    <label className="field-label">
+                      <span>年龄</span>
+                      <input value={item.age} onChange={(event) => updateCharacter(item.id, { age: event.target.value })} />
+                    </label>
+                  </div>
+                  <label className="field-label">
+                    <span>性格</span>
+                    <textarea rows={2} value={item.personality} onChange={(event) => updateCharacter(item.id, { personality: event.target.value })} />
+                  </label>
+                  <label className="field-label">
+                    <span>外貌</span>
+                    <textarea rows={2} value={item.appearance} onChange={(event) => updateCharacter(item.id, { appearance: event.target.value })} />
+                  </label>
+                  <label className="field-label">
+                    <span>动机</span>
+                    <textarea rows={2} value={item.motivation} onChange={(event) => updateCharacter(item.id, { motivation: event.target.value })} />
+                  </label>
+                  <label className="field-label">
+                    <span>服装</span>
+                    <textarea rows={2} value={item.outfit} onChange={(event) => updateCharacter(item.id, { outfit: event.target.value })} />
+                  </label>
+                  <div className="action-row">
+                    <button className="ghost-mini-button" type="button" onClick={() => removeCharacter(item.id)}>
+                      删除角色
+                    </button>
+                  </div>
                 </div>
               ))}
+              {!assetLibrary.characters.length ? <p className="asset-empty-copy">暂无角色卡，可以手动新增或用 AI 生成。</p> : null}
+
+              <h4>场景卡</h4>
+              {assetLibrary.scenes.map((item) => (
+                <div className="overview-item asset-edit-card" key={item.id}>
+                  <div className="field-row">
+                    <label className="field-label">
+                      <span>场景名</span>
+                      <input value={item.name} onChange={(event) => updateScene(item.id, { name: event.target.value })} />
+                    </label>
+                    <label className="field-label">
+                      <span>地点</span>
+                      <input value={item.location} onChange={(event) => updateScene(item.id, { location: event.target.value })} />
+                    </label>
+                    <label className="field-label">
+                      <span>出现集数</span>
+                      <input value={item.episodes} onChange={(event) => updateScene(item.id, { episodes: event.target.value })} />
+                    </label>
+                  </div>
+                  <label className="field-label">
+                    <span>氛围</span>
+                    <textarea rows={3} value={item.atmosphere} onChange={(event) => updateScene(item.id, { atmosphere: event.target.value })} />
+                  </label>
+                  <div className="action-row">
+                    <button className="ghost-mini-button" type="button" onClick={() => removeScene(item.id)}>
+                      删除场景
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {!assetLibrary.scenes.length ? <p className="asset-empty-copy">暂无场景卡，可以手动新增或用 AI 生成。</p> : null}
+
+              <h4>道具卡</h4>
+              {assetLibrary.props.map((item) => (
+                <div className="overview-item asset-edit-card" key={item.id}>
+                  <div className="field-row">
+                    <label className="field-label">
+                      <span>道具名</span>
+                      <input value={item.name} onChange={(event) => updateProp(item.id, { name: event.target.value })} />
+                    </label>
+                    <label className="field-label">
+                      <span>类型</span>
+                      <input value={item.type} onChange={(event) => updateProp(item.id, { type: event.target.value })} />
+                    </label>
+                  </div>
+                  <label className="field-label">
+                    <span>剧情作用</span>
+                    <textarea rows={3} value={item.story_function} onChange={(event) => updateProp(item.id, { story_function: event.target.value })} />
+                  </label>
+                  <div className="action-row">
+                    <button className="ghost-mini-button" type="button" onClick={() => removeProp(item.id)}>
+                      删除道具
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {!assetLibrary.props.length ? <p className="asset-empty-copy">暂无道具卡，可以手动新增或用 AI 生成。</p> : null}
             </div>
           </div>
         }
         right={
           <div className="panel-card">
-            <h3>风格与一致性</h3>
+            <div className="rewrite-head">
+              <h3>风格与一致性</h3>
+              <div className="chip-row">
+                <AIActionButton
+                  isGenerating={aiAction === "generate-style"}
+                  disabled={Boolean(aiAction)}
+                  loadingLabel="风格生成中"
+                  onClick={() => void generateStyleSupport("style")}
+                >
+                  AI 风格板
+                </AIActionButton>
+                <AIActionButton
+                  isGenerating={aiAction === "generate-rules"}
+                  disabled={Boolean(aiAction)}
+                  loadingLabel="规则生成中"
+                  onClick={() => void generateStyleSupport("rules")}
+                >
+                  AI 一致性
+                </AIActionButton>
+              </div>
+            </div>
             <label className="field-label">
               <span>风格板</span>
               <textarea value={assetLibrary.style_board} onChange={(event) => setAssetLibrary({ ...assetLibrary, style_board: event.target.value })} placeholder="记录画风、色彩、光影、镜头质感。" />

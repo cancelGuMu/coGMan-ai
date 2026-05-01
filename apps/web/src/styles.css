@@ -3449,6 +3449,44 @@ select:focus {
   gap: 12px;
 }
 
+.asset-edit-card {
+  display: grid;
+  gap: 10px;
+}
+
+.asset-edit-card .field-row {
+  gap: 10px;
+}
+
+.asset-edit-card .field-label {
+  margin-bottom: 0;
+}
+
+.asset-edit-card .field-label span {
+  display: block;
+  margin-bottom: 6px;
+  color: #f1d89b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.asset-edit-card input,
+.asset-edit-card textarea {
+  min-height: 38px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.asset-edit-card textarea {
+  min-height: 68px;
+}
+
+.relationship-list h4 {
+  margin: 18px 0 8px;
+  color: #ffe0a2;
+}
+
 .shot-table-grid,
 .prompt-list-grid,
 .image-candidate-grid,
