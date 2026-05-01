@@ -352,6 +352,19 @@ button[aria-busy="true"] {
   white-space: nowrap;
 }
 
+.inline-feedback {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid rgba(92, 122, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(92, 122, 255, 0.1);
+  color: #314178;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .next-step-button {
   min-height: 44px;
   padding: 0 18px;

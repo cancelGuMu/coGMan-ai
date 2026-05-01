@@ -2610,6 +2610,7 @@ function StepOneSection({
   const [isDirty, setIsDirty] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
   const [foundationGenerating, setFoundationGenerating] = useState<"world" | "mainline" | "relationships" | null>(null);
+  const coreStoryIdeaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     setForm(project.step_one);
@@ -2698,7 +2699,12 @@ function StepOneSection({
         import_parse_status: `已解析 ${result.content.length} 个字符`,
       }));
       setIsDirty(true);
-      setStatusMessage(`已导入文件：${result.filename}`);
+      setStatusMessage(`已导入文件：${result.filename}，内容已写入「核心故事思路」，共 ${result.content.length} 个字符`);
+      event.currentTarget.value = "";
+      window.setTimeout(() => {
+        coreStoryIdeaRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        coreStoryIdeaRef.current?.focus({ preventScroll: true });
+      }, 50);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "导入失败");
     }
@@ -2963,6 +2969,7 @@ function StepOneSection({
           <label className="field-label">
             <span>核心故事思路</span>
             <textarea
+              ref={coreStoryIdeaRef}
               value={form.core_story_idea}
               onChange={(event) => updateForm({ ...form, core_story_idea: event.target.value })}
               placeholder="输入核心故事思路，或导入 .txt / .md / .docx / .csv / .srt 文件"
@@ -3229,6 +3236,7 @@ function StepTwoSection({
   const characterProfilesRef = useRef<HTMLTextAreaElement | null>(null);
   const terminologyRef = useRef<HTMLTextAreaElement | null>(null);
   const guidanceRef = useRef<HTMLTextAreaElement | null>(null);
+  const sourceMaterialRef = useRef<HTMLTextAreaElement | null>(null);
   const referenceRef = useRef<HTMLTextAreaElement | null>(null);
   const novelRef = useRef<HTMLTextAreaElement | null>(null);
   const scriptRef = useRef<HTMLTextAreaElement | null>(null);
@@ -3259,6 +3267,7 @@ function StepTwoSection({
     try {
       assertImportableFile(file);
       const result = await importTextFile(file);
+      const targetLabel = kind === "source" ? "素材导入文本框" : "小说正文";
       if (kind === "source") {
         setForm((current) => ({
           ...current,
@@ -3272,7 +3281,13 @@ function StepTwoSection({
           novel_text: result.content,
         }));
       }
-      setStatusMessage(`已导入文件：${result.filename}`);
+      setStatusMessage(`已导入文件：${result.filename}，内容已写入「${targetLabel}」，共 ${result.content.length} 个字符`);
+      event.currentTarget.value = "";
+      window.setTimeout(() => {
+        const target = kind === "source" ? sourceMaterialRef.current : novelRef.current;
+        target?.scrollIntoView({ behavior: "smooth", block: "center" });
+        target?.focus({ preventScroll: true });
+      }, 50);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "导入失败");
     }
@@ -3555,6 +3570,7 @@ function StepTwoSection({
           <label className="field-label">
             <span>素材导入文本框</span>
             <textarea
+              ref={sourceMaterialRef}
               rows={5}
               value={form.source_material}
               onChange={(event) => setForm({ ...form, source_material: event.target.value })}
@@ -3564,6 +3580,9 @@ function StepTwoSection({
 
           <div className="action-row">
             <ImportFileButton label="导入素材文件" filename={form.imported_source_name} onChange={(event) => handleImport("source", event)} />
+            {form.imported_source_name ? (
+              <span className="inline-feedback">已写入素材导入文本框：{form.source_material.length} 个字符</span>
+            ) : null}
             <AIActionButton
               isGenerating={generatingMode === "roles"}
               disabled={Boolean(generatingMode)}
@@ -3651,6 +3670,9 @@ function StepTwoSection({
           </label>
           <div className="action-row">
             <ImportFileButton label="导入正文文件" filename={form.imported_novel_name} onChange={(event) => handleImport("novel", event)} />
+            {form.imported_novel_name ? (
+              <span className="inline-feedback">已写入小说正文：{form.novel_text.length} 个字符</span>
+            ) : null}
             <AIActionButton
               isGenerating={generatingMode === "novel"}
               disabled={Boolean(generatingMode)}
