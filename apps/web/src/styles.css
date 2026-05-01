@@ -3449,6 +3449,29 @@ select:focus {
   gap: 12px;
 }
 
+.asset-page-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.asset-page-panel,
+.asset-style-panel {
+  margin-top: 18px;
+}
+
+.asset-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.asset-card-grid > .rewrite-head,
+.asset-card-grid > .asset-empty-copy {
+  grid-column: 1 / -1;
+}
+
 .asset-edit-card {
   display: grid;
   gap: 10px;
@@ -3462,6 +3485,18 @@ select:focus {
   border: 1px solid rgba(255, 228, 168, 0.18);
   border-radius: 14px;
   background: rgba(38, 29, 20, 0.76);
+}
+
+.asset-card-feedback {
+  display: block;
+  padding: 8px 10px;
+  border: 1px solid rgba(92, 122, 255, 0.18);
+  border-radius: 12px;
+  background: rgba(92, 122, 255, 0.1);
+  color: #30417a;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.5;
 }
 
 .asset-edit-card .field-row {

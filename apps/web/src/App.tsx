@@ -4041,10 +4041,16 @@ function StepThreeSection({
   const [assetLibrary, setAssetLibrary] = useState<StepThreeData>(project.step_three);
   const [saving, setSaving] = useState(false);
   const [aiAction, setAiAction] = useState<string | null>(null);
+  const [assetPage, setAssetPage] = useState<"characters" | "scenes" | "props">("characters");
+  const [assetFeedback, setAssetFeedback] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setAssetLibrary(project.step_three);
   }, [project.step_three]);
+
+  function setCardFeedback(cardId: string, message: string) {
+    setAssetFeedback((current) => ({ ...current, [cardId]: message }));
+  }
 
   async function extractAssetCandidates() {
     if (aiAction) return;
@@ -4149,12 +4155,13 @@ function StepThreeSection({
   }
 
   function addCharacter() {
+    const id = `char-${Date.now()}`;
     setAssetLibrary((current) => ({
       ...current,
       characters: [
         ...current.characters,
         {
-          id: `char-${Date.now()}`,
+          id,
           name: `角色 ${current.characters.length + 1}`,
           role: "待设定",
           age: "",
@@ -4167,6 +4174,8 @@ function StepThreeSection({
         },
       ],
     }));
+    setAssetPage("characters");
+    setCardFeedback(id, "新角色卡已创建，可以输入少量描述后点 AI 补全。");
     setStatusMessage?.("已新增角色卡，保存资产后生效。");
   }
 
@@ -4189,12 +4198,13 @@ function StepThreeSection({
   }
 
   function addScene() {
+    const id = `scene-${Date.now()}`;
     setAssetLibrary((current) => ({
       ...current,
       scenes: [
         ...current.scenes,
         {
-          id: `scene-${Date.now()}`,
+          id,
           name: `场景 ${current.scenes.length + 1}`,
           location: "",
           atmosphere: "",
@@ -4204,6 +4214,8 @@ function StepThreeSection({
         },
       ],
     }));
+    setAssetPage("scenes");
+    setCardFeedback(id, "新场景卡已创建，可以输入地点或氛围后点 AI 补全。");
     setStatusMessage?.("已新增场景卡，保存资产后生效。");
   }
 
@@ -4226,12 +4238,13 @@ function StepThreeSection({
   }
 
   function addProp() {
+    const id = `prop-${Date.now()}`;
     setAssetLibrary((current) => ({
       ...current,
       props: [
         ...current.props,
         {
-          id: `prop-${Date.now()}`,
+          id,
           name: `道具 ${current.props.length + 1}`,
           type: "剧情道具",
           story_function: "",
@@ -4240,6 +4253,8 @@ function StepThreeSection({
         },
       ],
     }));
+    setAssetPage("props");
+    setCardFeedback(id, "新道具卡已创建，可以输入道具名或作用后点 AI 补全。");
     setStatusMessage?.("已新增道具卡，保存资产后生效。");
   }
 
@@ -4380,6 +4395,7 @@ function StepThreeSection({
           : assetLibrary.props.find((item) => item.id === id);
     if (!currentAsset) return;
     setAiAction(`complete-${kind}:${id}`);
+    setCardFeedback(id, "AI 正在补全这张卡片...");
     setStatusMessage?.(`AI 正在补全${labelMap[kind]}...`);
     try {
       const result = await generateProjectTextTask(
@@ -4429,8 +4445,10 @@ function StepThreeSection({
           story_function: textValue(record.story_function || record.description || record.visual_design, prop.story_function),
         });
       }
+      setCardFeedback(id, `AI 已补全${labelMap[kind]}，请检查字段后保存。`);
       setStatusMessage?.(`AI 已补全${labelMap[kind]}，请检查后保存资产。`);
     } catch (err) {
+      setCardFeedback(id, err instanceof Error ? err.message : `AI ${labelMap[kind]}补全失败`);
       setStatusMessage?.(err instanceof Error ? err.message : `AI ${labelMap[kind]}补全失败`);
     } finally {
       setAiAction(null);
@@ -4448,6 +4466,7 @@ function StepThreeSection({
     if (!currentAsset) return;
     const name = "name" in currentAsset ? currentAsset.name : "未命名资产";
     setAiAction(`image-${kind}:${id}`);
+    setCardFeedback(id, `正在生成${kind === "scene" ? "场景图" : "三视图"}...`);
     setStatusMessage?.(`正在为「${name || "未命名资产"}」生成资产图...`);
     try {
       const prompt =
@@ -4494,8 +4513,10 @@ function StepThreeSection({
       } else {
         updateProp(id, { image_url: result.url, image_prompt: result.prompt });
       }
+      setCardFeedback(id, `${kind === "scene" ? "场景图" : "三视图"}已生成，请检查后保存资产。`);
       setStatusMessage?.(`已生成「${name || "资产"}」图片，请检查后保存资产。`);
     } catch (err) {
+      setCardFeedback(id, err instanceof Error ? err.message : "资产图片生成失败");
       setStatusMessage?.(err instanceof Error ? err.message : "资产图片生成失败");
     } finally {
       setAiAction(null);
@@ -4553,6 +4574,12 @@ function StepThreeSection({
     { label: "场景", value: assetLibrary.scenes.length, hint: "地点、氛围、出现集数" },
     { label: "道具", value: assetLibrary.props.length, hint: "剧情作用、归属关系" },
   ];
+  const activeAssetCount =
+    assetPage === "characters"
+      ? assetLibrary.characters.length
+      : assetPage === "scenes"
+        ? assetLibrary.scenes.length
+        : assetLibrary.props.length;
 
   return (
     <section className="editor-section" id="asset-setting">
@@ -4603,16 +4630,38 @@ function StepThreeSection({
         center={
           <div className="panel-card">
             <div className="rewrite-head">
-              <h3>待提取资产候选</h3>
+              <h3>资产卡片</h3>
               <div className="chip-row">
                 <button className="ghost-button inline-button" type="button" onClick={addCharacter}>新增角色</button>
                 <button className="ghost-button inline-button" type="button" onClick={addScene}>新增场景</button>
                 <button className="ghost-button inline-button" type="button" onClick={addProp}>新增道具</button>
               </div>
             </div>
+            <div className="asset-page-tabs" role="tablist" aria-label="资产类型页面">
+              <button className={`mode-switch ${assetPage === "characters" ? "active" : ""}`} type="button" onClick={() => setAssetPage("characters")}>
+                角色页 · {assetLibrary.characters.length}
+              </button>
+              <button className={`mode-switch ${assetPage === "scenes" ? "active" : ""}`} type="button" onClick={() => setAssetPage("scenes")}>
+                场景页 · {assetLibrary.scenes.length}
+              </button>
+              <button className={`mode-switch ${assetPage === "props" ? "active" : ""}`} type="button" onClick={() => setAssetPage("props")}>
+                道具页 · {assetLibrary.props.length}
+              </button>
+            </div>
             <p className="asset-empty-copy">
-              AI 提取会先生成候选，勾选后点「加入资产库」。手动新增和 AI 生成的资产会直接进入下方可编辑列表。
+              当前页面共有 {activeAssetCount} 张卡片。每张卡片都可以独立编辑、AI 补全、生成图片和删除。
             </p>
+          </div>
+        }
+        right={
+          <div className="panel-card">
+            <div className="rewrite-head">
+              <h3>待提取资产候选</h3>
+              <button className="ghost-button inline-button" type="button" onClick={addSelectedCandidates}>
+                加入资产库
+              </button>
+            </div>
+            <p className="asset-empty-copy">从角色画像、术语库和剧本提取出的候选会先放在这里，勾选后加入对应页面。</p>
             <div className="asset-placeholder-grid">
               {assetLibrary.candidates.length ? assetLibrary.candidates.map((item) => (
                 <div className="overview-item" key={item.id}>
@@ -4641,7 +4690,13 @@ function StepThreeSection({
                 </div>
               ))}
             </div>
-            <div className="overview-list relationship-list">
+          </div>
+        }
+      />
+
+      <div className="panel-card asset-page-panel">
+        {assetPage === "characters" ? (
+          <div className="overview-list relationship-list asset-card-grid">
               <div className="rewrite-head">
                 <h4>角色卡</h4>
                 <AIActionButton
@@ -4709,10 +4764,14 @@ function StepThreeSection({
                       删除角色
                     </button>
                   </div>
+                  {assetFeedback[item.id] ? <span className="asset-card-feedback">{assetFeedback[item.id]}</span> : null}
                 </div>
               ))}
               {!assetLibrary.characters.length ? <p className="asset-empty-copy">暂无角色卡，可以从上游提取，或手动新增后用 AI 补全。</p> : null}
-
+          </div>
+        ) : null}
+        {assetPage === "scenes" ? (
+          <div className="overview-list relationship-list asset-card-grid">
               <div className="rewrite-head">
                 <h4>场景卡</h4>
                 <AIActionButton
@@ -4768,10 +4827,14 @@ function StepThreeSection({
                       删除场景
                     </button>
                   </div>
+                  {assetFeedback[item.id] ? <span className="asset-card-feedback">{assetFeedback[item.id]}</span> : null}
                 </div>
               ))}
               {!assetLibrary.scenes.length ? <p className="asset-empty-copy">暂无场景卡，可以从上游提取，或手动新增后用 AI 补全。</p> : null}
-
+          </div>
+        ) : null}
+        {assetPage === "props" ? (
+          <div className="overview-list relationship-list asset-card-grid">
               <div className="rewrite-head">
                 <h4>道具卡</h4>
                 <AIActionButton
@@ -4823,14 +4886,15 @@ function StepThreeSection({
                       删除道具
                     </button>
                   </div>
+                  {assetFeedback[item.id] ? <span className="asset-card-feedback">{assetFeedback[item.id]}</span> : null}
                 </div>
               ))}
               {!assetLibrary.props.length ? <p className="asset-empty-copy">暂无道具卡，可以从上游提取，或手动新增后用 AI 补全。</p> : null}
-            </div>
           </div>
-        }
-        right={
-          <div className="panel-card">
+        ) : null}
+      </div>
+
+      <div className="panel-card asset-style-panel">
             <div className="rewrite-head">
               <h3>风格与一致性</h3>
               <div className="chip-row">
@@ -4864,9 +4928,7 @@ function StepThreeSection({
               <span>提示词模板</span>
               <textarea value={assetLibrary.prompt_templates} onChange={(event) => setAssetLibrary({ ...assetLibrary, prompt_templates: event.target.value })} placeholder="角色、场景、道具提示词模板。" />
             </label>
-          </div>
-        }
-      />
+      </div>
     </section>
   );
 }
