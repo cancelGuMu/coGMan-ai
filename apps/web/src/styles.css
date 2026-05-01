@@ -113,7 +113,7 @@ select:focus {
 
 .home-page {
   --home-scale: 1;
-  --home-preview-scale: 0.82;
+  --home-preview-scale: 0.88;
   position: relative;
   width: 100%;
   margin: 0;
@@ -3700,7 +3700,7 @@ select:focus {
 @media (max-width: 1480px) {
   .home-page {
     --home-scale: 0.92;
-    --home-preview-scale: 0.7;
+    --home-preview-scale: 0.72;
   }
 
   .page-container {
