@@ -3332,19 +3332,58 @@ function StepTwoSection({
     setStatusMessage("已新增节奏节点。");
   }
 
-  function formatScriptText(kind: "dialogue" | "narration" | "action") {
-    const prefix = kind === "dialogue" ? "【对白】" : kind === "narration" ? "【旁白】" : "【动作】";
-    setForm((current) => ({
-      ...current,
-      script_text: current.script_text
-        .split("\n")
-        .map((line) => (line.trim() ? `${prefix}${line.replace(/^【.*?】/, "")}` : line))
-        .join("\n"),
-      last_modified_by: "人工",
-    }));
-    appendModificationRecord(`完成${kind === "dialogue" ? "对白" : kind === "narration" ? "旁白" : "动作"}标记`, "人工");
-    focusGeneratedOutput("script");
-    setStatusMessage(`${kind === "dialogue" ? "对白格式化" : kind === "narration" ? "旁白标记" : "动作标记"}已应用到剧本文本。`);
+  async function formatScriptText(kind: "dialogue" | "narration" | "action") {
+    if (generatingMode) return;
+    if (!form.script_text.trim()) {
+      setStatusMessage("请先生成或填写剧本文本，再进行 AI 标注。");
+      return;
+    }
+    const labelMap = {
+      dialogue: "对白格式化",
+      narration: "旁白标记",
+      action: "动作标记",
+    };
+    const targetMap = {
+      dialogue: "对白",
+      narration: "旁白",
+      action: "动作",
+    };
+    setGeneratingMode(`markup-${kind}`);
+    setStatusMessage(`AI 正在进行${labelMap[kind]}...`);
+    try {
+      const result = await generateProjectTextTask(
+        project.name,
+        "S02_SCRIPT_MARKUP",
+        [
+          `标注目标：${targetMap[kind]}`,
+          "标注规则：",
+          "1. 只给语义上属于目标类型的句段补充对应标签。",
+          "2. 不要把整段文本全部替换成同一种标签。",
+          "3. 保留已有正确标签，修正明显错误标签。",
+          "4. 不改写剧情事实、人物称谓、台词含义和段落顺序。",
+          "待标注剧本文本：",
+          form.script_text,
+        ].join("\n")
+      );
+      const parsed = firstJsonObject(result.content);
+      const markedScript = textValue(parsed.marked_script || parsed.script_text || parsed.marked_text, result.content);
+      if (!markedScript.trim()) {
+        setStatusMessage("AI 已返回，但没有可写入的标注文本，请调整剧本后重试。");
+        return;
+      }
+      setForm((current) => ({
+        ...current,
+        script_text: markedScript,
+        last_modified_by: "AI",
+      }));
+      appendModificationRecord(`AI 完成${labelMap[kind]}`, "AI");
+      focusGeneratedOutput("script");
+      setStatusMessage(textValue(parsed.markup_notes) || `AI 已完成${labelMap[kind]}，结果已写入剧本文本。`);
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : `AI ${labelMap[kind]}失败`);
+    } finally {
+      setGeneratingMode(null);
+    }
   }
 
   function snapshotScriptVersion() {
@@ -3842,15 +3881,30 @@ function StepTwoSection({
             >
               生成剧本
             </AIActionButton>
-            <button className="ghost-button inline-button" type="button" onClick={() => formatScriptText("dialogue")}>
+            <AIActionButton
+              isGenerating={generatingMode === "markup-dialogue"}
+              disabled={Boolean(generatingMode)}
+              loadingLabel="对白标注中"
+              onClick={() => void formatScriptText("dialogue")}
+            >
               对白格式化
-            </button>
-            <button className="ghost-button inline-button" type="button" onClick={() => formatScriptText("narration")}>
+            </AIActionButton>
+            <AIActionButton
+              isGenerating={generatingMode === "markup-narration"}
+              disabled={Boolean(generatingMode)}
+              loadingLabel="旁白标注中"
+              onClick={() => void formatScriptText("narration")}
+            >
               旁白标记
-            </button>
-            <button className="ghost-button inline-button" type="button" onClick={() => formatScriptText("action")}>
+            </AIActionButton>
+            <AIActionButton
+              isGenerating={generatingMode === "markup-action"}
+              disabled={Boolean(generatingMode)}
+              loadingLabel="动作标注中"
+              onClick={() => void formatScriptText("action")}
+            >
               动作标记
-            </button>
+            </AIActionButton>
             <AIActionButton
               isGenerating={generatingMode === "check"}
               disabled={Boolean(generatingMode)}

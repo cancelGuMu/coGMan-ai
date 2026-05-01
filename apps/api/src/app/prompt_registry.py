@@ -213,6 +213,23 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         output_contract="只返回合法 JSON：{\"rewritten_text\":\"改写后的完整可用文本\",\"change_notes\":\"改写说明\"}。",
         required_inputs=("project_name", "prompt"),
     ),
+    "S02_SCRIPT_MARKUP": PromptTask(
+        task_id="S02_SCRIPT_MARKUP",
+        step_id="script-creation",
+        model_role="text_fast",
+        system_prompt=FAST_TEXT_MODEL_SYSTEM,
+        user_instruction=(
+            "对已有剧本文本做语义标注，不要机械地给每一行加同一个前缀。"
+            "根据用户指定的标注目标识别对白、旁白或动作描写；只为匹配目标的句段补充对应标签，"
+            "已存在的正确标签要保留，错误标签要修正，原有剧情事实、台词含义、角色称谓和段落顺序不得改变。"
+        ),
+        output_contract=(
+            "只返回合法 JSON：{\"marked_script\":\"标注后的完整剧本文本\","
+            "\"markup_notes\":\"说明标注了哪些类型、哪些内容保持不变\"}。"
+            "标签只使用【对白】、【旁白】、【动作】；不要输出 Markdown、解释性段落或代码块。"
+        ),
+        required_inputs=("project_name", "prompt"),
+    ),
     "S03_ASSET_EXTRACT": PromptTask(
         task_id="S03_ASSET_EXTRACT",
         step_id="asset-setting",
