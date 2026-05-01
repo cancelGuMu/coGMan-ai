@@ -135,6 +135,8 @@ export type AssetCharacter = {
   appearance: string;
   motivation: string;
   outfit: string;
+  image_url?: string;
+  image_prompt?: string;
 };
 
 export type AssetScene = {
@@ -143,6 +145,8 @@ export type AssetScene = {
   location: string;
   atmosphere: string;
   episodes: string;
+  image_url?: string;
+  image_prompt?: string;
 };
 
 export type AssetProp = {
@@ -150,6 +154,8 @@ export type AssetProp = {
   name: string;
   type: string;
   story_function: string;
+  image_url?: string;
+  image_prompt?: string;
 };
 
 export type AssetCandidate = {

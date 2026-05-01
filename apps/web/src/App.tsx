@@ -4049,10 +4049,16 @@ function StepThreeSection({
   async function extractAssetCandidates() {
     if (aiAction) return;
     const source = [
-      "故事架构：",
-      project.step_one.season_outline,
-      "剧本/正文：",
-      project.step_two.script_text || project.step_two.novel_text || project.step_two.source_material,
+      "角色画像：",
+      project.step_two.character_profiles || "暂无",
+      "术语库：",
+      project.step_two.terminology_library || "暂无",
+      "写作指导：",
+      project.step_two.writing_guidance || "暂无",
+      "剧本/正文/素材：",
+      project.step_two.script_text || project.step_two.novel_text || project.step_two.source_material || "暂无",
+      "故事结构补充：",
+      project.step_one.season_outline || project.step_one.core_story_idea || "暂无",
     ].join("\n");
     setAiAction("extract-assets");
     setStatusMessage?.("AI 正在提取资产候选...");
@@ -4105,6 +4111,8 @@ function StepThreeSection({
             appearance: "",
             motivation: item.description,
             outfit: "",
+            image_url: "",
+            image_prompt: "",
           })),
       ],
       scenes: [
@@ -4117,6 +4125,8 @@ function StepThreeSection({
             location: item.name,
             atmosphere: item.description,
             episodes: String(project.step_two.selected_episode_number || 1),
+            image_url: "",
+            image_prompt: "",
           })),
       ],
       props: [
@@ -4128,6 +4138,8 @@ function StepThreeSection({
             name: item.name,
             type: "剧情道具",
             story_function: item.description,
+            image_url: "",
+            image_prompt: "",
           })),
       ],
     };
@@ -4150,6 +4162,8 @@ function StepThreeSection({
           appearance: "",
           motivation: "",
           outfit: "",
+          image_url: "",
+          image_prompt: "",
         },
       ],
     }));
@@ -4185,6 +4199,8 @@ function StepThreeSection({
           location: "",
           atmosphere: "",
           episodes: String(project.step_two.selected_episode_number || 1),
+          image_url: "",
+          image_prompt: "",
         },
       ],
     }));
@@ -4219,6 +4235,8 @@ function StepThreeSection({
           name: `道具 ${current.props.length + 1}`,
           type: "剧情道具",
           story_function: "",
+          image_url: "",
+          image_prompt: "",
         },
       ],
     }));
@@ -4247,6 +4265,12 @@ function StepThreeSection({
     return [
       "故事结构：",
       project.step_one.season_outline || project.step_one.core_story_idea,
+      "角色画像：",
+      project.step_two.character_profiles,
+      "术语库：",
+      project.step_two.terminology_library,
+      "写作指导：",
+      project.step_two.writing_guidance,
       "角色关系：",
       project.step_one.relationship_notes,
       "剧本/正文/素材：",
@@ -4275,10 +4299,10 @@ function StepThreeSection({
       const parsed = firstJsonObject(result.content);
       const records = listValue(
         kind === "character"
-          ? parsed.characters || parsed.roles || parsed.character_cards
+          ? parsed.characters || parsed.roles || parsed.character_cards || parsed.character_cards_demo || parsed.items
           : kind === "scene"
-            ? parsed.scenes || parsed.scene_cards
-            : parsed.props || parsed.prop_cards
+            ? parsed.scenes || parsed.scene_cards || parsed.scene_cards_demo || parsed.items
+            : parsed.props || parsed.prop_cards || parsed.prop_cards_demo || parsed.items
       );
       if (!records.length) {
         setStatusMessage?.(`AI 已返回，但没有可写入的${labelMap[kind]}。`);
@@ -4331,6 +4355,148 @@ function StepThreeSection({
       setStatusMessage?.(`AI 已生成 ${records.length} 条${labelMap[kind]}，请检查后保存资产。`);
     } catch (err) {
       setStatusMessage?.(err instanceof Error ? err.message : `AI ${labelMap[kind]}生成失败`);
+    } finally {
+      setAiAction(null);
+    }
+  }
+
+  async function completeAssetCard(kind: "character" | "scene" | "prop", id: string) {
+    if (aiAction) return;
+    const taskMap = {
+      character: "S03_CHARACTER_CARDS",
+      scene: "S03_SCENE_CARDS",
+      prop: "S03_PROP_CARDS",
+    };
+    const labelMap = {
+      character: "角色卡",
+      scene: "场景卡",
+      prop: "道具卡",
+    };
+    const currentAsset =
+      kind === "character"
+        ? assetLibrary.characters.find((item) => item.id === id)
+        : kind === "scene"
+          ? assetLibrary.scenes.find((item) => item.id === id)
+          : assetLibrary.props.find((item) => item.id === id);
+    if (!currentAsset) return;
+    setAiAction(`complete-${kind}:${id}`);
+    setStatusMessage?.(`AI 正在补全${labelMap[kind]}...`);
+    try {
+      const result = await generateProjectTextTask(
+        project.name,
+        taskMap[kind],
+        [
+          "请只补全这个用户手动新建或编辑过的单个资产卡，不要批量生成新资产。",
+          "已有资产卡：",
+          JSON.stringify(currentAsset, null, 2),
+          "上游来源：",
+          getAssetSourceText(),
+        ].join("\n")
+      );
+      const parsed = firstJsonObject(result.content);
+      const records = listValue(
+        kind === "character"
+          ? parsed.characters || parsed.roles || parsed.character_cards || parsed.character_cards_demo || parsed.items
+          : kind === "scene"
+            ? parsed.scenes || parsed.scene_cards || parsed.scene_cards_demo || parsed.items
+            : parsed.props || parsed.prop_cards || parsed.prop_cards_demo || parsed.items
+      );
+      const record = (records[0] && typeof records[0] === "object" ? records[0] : parsed) as Record<string, unknown>;
+      if (kind === "character") {
+        const character = currentAsset as AssetCharacter;
+        updateCharacter(id, {
+          name: textValue(record.name || record.character_name, character.name),
+          role: textValue(record.role || record.position, character.role),
+          age: textValue(record.age, character.age),
+          personality: textValue(record.personality, character.personality),
+          appearance: textValue(record.appearance || record.visual_design || record.visual_cues, character.appearance),
+          motivation: textValue(record.motivation || record.story_function, character.motivation),
+          outfit: textValue(record.outfit || record.costume, character.outfit),
+        });
+      } else if (kind === "scene") {
+        const scene = currentAsset as AssetScene;
+        updateScene(id, {
+          name: textValue(record.name || record.scene_name, scene.name),
+          location: textValue(record.location || record.spatial_layout, scene.location),
+          atmosphere: textValue(record.atmosphere || record.lighting || record.description, scene.atmosphere),
+          episodes: textValue(record.episodes || record.first_seen, scene.episodes),
+        });
+      } else {
+        const prop = currentAsset as AssetProp;
+        updateProp(id, {
+          name: textValue(record.name || record.prop_name, prop.name),
+          type: textValue(record.type || record.category, prop.type),
+          story_function: textValue(record.story_function || record.description || record.visual_design, prop.story_function),
+        });
+      }
+      setStatusMessage?.(`AI 已补全${labelMap[kind]}，请检查后保存资产。`);
+    } catch (err) {
+      setStatusMessage?.(err instanceof Error ? err.message : `AI ${labelMap[kind]}补全失败`);
+    } finally {
+      setAiAction(null);
+    }
+  }
+
+  async function generateAssetImage(kind: "character" | "scene" | "prop", id: string) {
+    if (aiAction) return;
+    const currentAsset =
+      kind === "character"
+        ? assetLibrary.characters.find((item) => item.id === id)
+        : kind === "scene"
+          ? assetLibrary.scenes.find((item) => item.id === id)
+          : assetLibrary.props.find((item) => item.id === id);
+    if (!currentAsset) return;
+    const name = "name" in currentAsset ? currentAsset.name : "未命名资产";
+    setAiAction(`image-${kind}:${id}`);
+    setStatusMessage?.(`正在为「${name || "未命名资产"}」生成资产图...`);
+    try {
+      const prompt =
+        kind === "character"
+          ? [
+              "生成角色设定三视图，正面、侧面、背面并排，干净浅色背景，统一服装和发型，适合后续漫画短剧资产一致性使用。",
+              `角色名：${(currentAsset as AssetCharacter).name}`,
+              `定位：${(currentAsset as AssetCharacter).role}`,
+              `年龄：${(currentAsset as AssetCharacter).age}`,
+              `性格：${(currentAsset as AssetCharacter).personality}`,
+              `外貌：${(currentAsset as AssetCharacter).appearance}`,
+              `服装：${(currentAsset as AssetCharacter).outfit}`,
+              `动机：${(currentAsset as AssetCharacter).motivation}`,
+              `风格约束：${assetLibrary.style_board}`,
+              `一致性规则：${assetLibrary.consistency_rules}`,
+            ].join("\n")
+          : kind === "prop"
+            ? [
+                "生成道具设定三视图，正面、侧面、背面并排，干净浅色背景，细节清晰，适合后续漫画短剧资产一致性使用。",
+                `道具名：${(currentAsset as AssetProp).name}`,
+                `类型：${(currentAsset as AssetProp).type}`,
+                `剧情作用：${(currentAsset as AssetProp).story_function}`,
+                `风格约束：${assetLibrary.style_board}`,
+                `一致性规则：${assetLibrary.consistency_rules}`,
+              ].join("\n")
+            : [
+                "生成完整场景概念图，横版构图，空间结构清晰，包含主要视觉锚点、光影氛围和可复用背景资产，适合漫画短剧分镜使用。",
+                `场景名：${(currentAsset as AssetScene).name}`,
+                `地点：${(currentAsset as AssetScene).location}`,
+                `氛围：${(currentAsset as AssetScene).atmosphere}`,
+                `出现集数：${(currentAsset as AssetScene).episodes}`,
+                `风格约束：${assetLibrary.style_board}`,
+                `一致性规则：${assetLibrary.consistency_rules}`,
+              ].join("\n");
+      const result = await generateImageCandidate({
+        prompt,
+        shot_id: `${kind}-${id}`,
+        shot_label: name || (kind === "character" ? "角色资产" : kind === "scene" ? "场景资产" : "道具资产"),
+      });
+      if (kind === "character") {
+        updateCharacter(id, { image_url: result.url, image_prompt: result.prompt });
+      } else if (kind === "scene") {
+        updateScene(id, { image_url: result.url, image_prompt: result.prompt });
+      } else {
+        updateProp(id, { image_url: result.url, image_prompt: result.prompt });
+      }
+      setStatusMessage?.(`已生成「${name || "资产"}」图片，请检查后保存资产。`);
+    } catch (err) {
+      setStatusMessage?.(err instanceof Error ? err.message : "资产图片生成失败");
     } finally {
       setAiAction(null);
     }
@@ -4423,31 +4589,7 @@ function StepThreeSection({
                 loadingLabel="资产提取中"
                 onClick={() => void extractAssetCandidates()}
               >
-                提取资产
-              </AIActionButton>
-              <AIActionButton
-                isGenerating={aiAction === "generate-character"}
-                disabled={Boolean(aiAction)}
-                loadingLabel="角色生成中"
-                onClick={() => void generateAssetCards("character")}
-              >
-                AI 生成角色
-              </AIActionButton>
-              <AIActionButton
-                isGenerating={aiAction === "generate-scene"}
-                disabled={Boolean(aiAction)}
-                loadingLabel="场景生成中"
-                onClick={() => void generateAssetCards("scene")}
-              >
-                AI 生成场景
-              </AIActionButton>
-              <AIActionButton
-                isGenerating={aiAction === "generate-prop"}
-                disabled={Boolean(aiAction)}
-                loadingLabel="道具生成中"
-                onClick={() => void generateAssetCards("prop")}
-              >
-                AI 生成道具
+                从角色/术语/剧本提取
               </AIActionButton>
               <button className="ghost-button inline-button" type="button" onClick={addSelectedCandidates}>
                 加入资产库
@@ -4500,9 +4642,20 @@ function StepThreeSection({
               ))}
             </div>
             <div className="overview-list relationship-list">
-              <h4>角色卡</h4>
+              <div className="rewrite-head">
+                <h4>角色卡</h4>
+                <AIActionButton
+                  isGenerating={aiAction === "generate-character"}
+                  disabled={Boolean(aiAction)}
+                  loadingLabel="角色提取中"
+                  onClick={() => void generateAssetCards("character")}
+                >
+                  从上游提取角色
+                </AIActionButton>
+              </div>
               {assetLibrary.characters.map((item) => (
                 <div className="overview-item asset-edit-card" key={item.id}>
+                  {item.image_url ? <img className="asset-card-image" src={item.image_url} alt={item.name || "角色三视图"} /> : null}
                   <div className="field-row">
                     <label className="field-label">
                       <span>角色名</span>
@@ -4534,17 +4687,46 @@ function StepThreeSection({
                     <textarea rows={2} value={item.outfit} onChange={(event) => updateCharacter(item.id, { outfit: event.target.value })} />
                   </label>
                   <div className="action-row">
+                    <AIActionButton
+                      className="ghost-mini-button"
+                      isGenerating={aiAction === `complete-character:${item.id}`}
+                      disabled={Boolean(aiAction)}
+                      loadingLabel="补全中"
+                      onClick={() => void completeAssetCard("character", item.id)}
+                    >
+                      AI 补全
+                    </AIActionButton>
+                    <AIActionButton
+                      className="ghost-mini-button"
+                      isGenerating={aiAction === `image-character:${item.id}`}
+                      disabled={Boolean(aiAction)}
+                      loadingLabel="三视图中"
+                      onClick={() => void generateAssetImage("character", item.id)}
+                    >
+                      生成三视图
+                    </AIActionButton>
                     <button className="ghost-mini-button" type="button" onClick={() => removeCharacter(item.id)}>
                       删除角色
                     </button>
                   </div>
                 </div>
               ))}
-              {!assetLibrary.characters.length ? <p className="asset-empty-copy">暂无角色卡，可以手动新增或用 AI 生成。</p> : null}
+              {!assetLibrary.characters.length ? <p className="asset-empty-copy">暂无角色卡，可以从上游提取，或手动新增后用 AI 补全。</p> : null}
 
-              <h4>场景卡</h4>
+              <div className="rewrite-head">
+                <h4>场景卡</h4>
+                <AIActionButton
+                  isGenerating={aiAction === "generate-scene"}
+                  disabled={Boolean(aiAction)}
+                  loadingLabel="场景提取中"
+                  onClick={() => void generateAssetCards("scene")}
+                >
+                  从上游提取场景
+                </AIActionButton>
+              </div>
               {assetLibrary.scenes.map((item) => (
                 <div className="overview-item asset-edit-card" key={item.id}>
+                  {item.image_url ? <img className="asset-card-image" src={item.image_url} alt={item.name || "场景图"} /> : null}
                   <div className="field-row">
                     <label className="field-label">
                       <span>场景名</span>
@@ -4564,17 +4746,46 @@ function StepThreeSection({
                     <textarea rows={3} value={item.atmosphere} onChange={(event) => updateScene(item.id, { atmosphere: event.target.value })} />
                   </label>
                   <div className="action-row">
+                    <AIActionButton
+                      className="ghost-mini-button"
+                      isGenerating={aiAction === `complete-scene:${item.id}`}
+                      disabled={Boolean(aiAction)}
+                      loadingLabel="补全中"
+                      onClick={() => void completeAssetCard("scene", item.id)}
+                    >
+                      AI 补全
+                    </AIActionButton>
+                    <AIActionButton
+                      className="ghost-mini-button"
+                      isGenerating={aiAction === `image-scene:${item.id}`}
+                      disabled={Boolean(aiAction)}
+                      loadingLabel="场景图中"
+                      onClick={() => void generateAssetImage("scene", item.id)}
+                    >
+                      生成场景图
+                    </AIActionButton>
                     <button className="ghost-mini-button" type="button" onClick={() => removeScene(item.id)}>
                       删除场景
                     </button>
                   </div>
                 </div>
               ))}
-              {!assetLibrary.scenes.length ? <p className="asset-empty-copy">暂无场景卡，可以手动新增或用 AI 生成。</p> : null}
+              {!assetLibrary.scenes.length ? <p className="asset-empty-copy">暂无场景卡，可以从上游提取，或手动新增后用 AI 补全。</p> : null}
 
-              <h4>道具卡</h4>
+              <div className="rewrite-head">
+                <h4>道具卡</h4>
+                <AIActionButton
+                  isGenerating={aiAction === "generate-prop"}
+                  disabled={Boolean(aiAction)}
+                  loadingLabel="道具提取中"
+                  onClick={() => void generateAssetCards("prop")}
+                >
+                  从上游提取道具
+                </AIActionButton>
+              </div>
               {assetLibrary.props.map((item) => (
                 <div className="overview-item asset-edit-card" key={item.id}>
+                  {item.image_url ? <img className="asset-card-image" src={item.image_url} alt={item.name || "道具三视图"} /> : null}
                   <div className="field-row">
                     <label className="field-label">
                       <span>道具名</span>
@@ -4590,13 +4801,31 @@ function StepThreeSection({
                     <textarea rows={3} value={item.story_function} onChange={(event) => updateProp(item.id, { story_function: event.target.value })} />
                   </label>
                   <div className="action-row">
+                    <AIActionButton
+                      className="ghost-mini-button"
+                      isGenerating={aiAction === `complete-prop:${item.id}`}
+                      disabled={Boolean(aiAction)}
+                      loadingLabel="补全中"
+                      onClick={() => void completeAssetCard("prop", item.id)}
+                    >
+                      AI 补全
+                    </AIActionButton>
+                    <AIActionButton
+                      className="ghost-mini-button"
+                      isGenerating={aiAction === `image-prop:${item.id}`}
+                      disabled={Boolean(aiAction)}
+                      loadingLabel="三视图中"
+                      onClick={() => void generateAssetImage("prop", item.id)}
+                    >
+                      生成三视图
+                    </AIActionButton>
                     <button className="ghost-mini-button" type="button" onClick={() => removeProp(item.id)}>
                       删除道具
                     </button>
                   </div>
                 </div>
               ))}
-              {!assetLibrary.props.length ? <p className="asset-empty-copy">暂无道具卡，可以手动新增或用 AI 生成。</p> : null}
+              {!assetLibrary.props.length ? <p className="asset-empty-copy">暂无道具卡，可以从上游提取，或手动新增后用 AI 补全。</p> : null}
             </div>
           </div>
         }

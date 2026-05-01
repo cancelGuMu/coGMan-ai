@@ -130,6 +130,8 @@ class AssetCharacter(BaseModel):
     appearance: str = ""
     motivation: str = ""
     outfit: str = ""
+    image_url: str = ""
+    image_prompt: str = ""
 
 
 class AssetScene(BaseModel):
@@ -138,6 +140,8 @@ class AssetScene(BaseModel):
     location: str = ""
     atmosphere: str = ""
     episodes: str = ""
+    image_url: str = ""
+    image_prompt: str = ""
 
 
 class AssetProp(BaseModel):
@@ -145,6 +149,8 @@ class AssetProp(BaseModel):
     name: str = ""
     type: str = ""
     story_function: str = ""
+    image_url: str = ""
+    image_prompt: str = ""
 
 
 class AssetCandidate(BaseModel):
