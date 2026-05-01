@@ -54,6 +54,7 @@ import type {
   DialogueLine,
   EpisodeDraft,
   ExportVersion,
+  CoverCandidate,
   ImageCandidate,
   OptimizationTask,
   PlatformMetric,
@@ -2269,7 +2270,10 @@ function CreateCenterPage() {
                           key={item.id}
                           className={`project-switch-option${item.id === selectedProjectId ? " active" : ""}`}
                           type="button"
-                          onClick={() => setSelectedProjectId(item.id)}
+                          onClick={() => {
+                            setSelectedProjectId(item.id);
+                            setStatusMessage(item.id === selectedProjectId ? `当前已选择项目：${item.name}` : `正在切换到项目：${item.name}`);
+                          }}
                         >
                           {item.name}
                         </button>
@@ -2332,6 +2336,15 @@ function CreativeWorkspaceContent({
 }) {
   const activeStep = workflowSteps.find((step) => step.id === activeStepId) ?? workflowSteps[0];
   const navigate = useNavigate();
+  const [statusMessageTick, setStatusMessageTick] = useState(0);
+  const announceStatusMessage = (message: string) => {
+    setStatusMessage(message);
+    setStatusMessageTick((current) => current + 1);
+  };
+  const handleProjectSaved = (nextProject: ProjectRecord, message: string) => {
+    onProjectSaved(nextProject, message);
+    setStatusMessageTick((current) => current + 1);
+  };
 
   return (
     <div className={shellClassName}>
@@ -2375,15 +2388,15 @@ function CreativeWorkspaceContent({
           {headerMeta ? <div className="header-meta">{headerMeta}</div> : null}
         </header>
 
-        <div className="status-banner">{statusMessage}</div>
+        <div className="status-banner status-banner-feedback" key={statusMessageTick}>{statusMessage}</div>
 
         {activeStep.id === "story-structure" ? (
           <StepOneSection
             project={project}
             onSaved={(nextProject, message) => {
-              onProjectSaved(mergeProjectDefaults(nextProject), message);
+              handleProjectSaved(mergeProjectDefaults(nextProject), message);
             }}
-            setStatusMessage={setStatusMessage}
+            setStatusMessage={announceStatusMessage}
             onNavigateStep={(stepId) => navigate(createCenterPath(stepId, project.id))}
           />
         ) : null}
@@ -2392,9 +2405,9 @@ function CreativeWorkspaceContent({
           <StepTwoSection
             project={project}
             onSaved={(nextProject, message) => {
-              onProjectSaved(mergeProjectDefaults(nextProject), message);
+              handleProjectSaved(mergeProjectDefaults(nextProject), message);
             }}
-            setStatusMessage={setStatusMessage}
+            setStatusMessage={announceStatusMessage}
             onNavigateStep={(stepId) => navigate(createCenterPath(stepId, project.id))}
           />
         ) : null}
@@ -2402,64 +2415,64 @@ function CreativeWorkspaceContent({
         {activeStep.id === "asset-setting" ? (
           <StepThreeSection
             project={project}
-            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
-            setStatusMessage={setStatusMessage}
+            onSaved={(nextProject, message) => handleProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={announceStatusMessage}
           />
         ) : null}
         {activeStep.id === "storyboard-planning" ? (
           <StepFourSection
             project={project}
-            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
-            setStatusMessage={setStatusMessage}
+            onSaved={(nextProject, message) => handleProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={announceStatusMessage}
           />
         ) : null}
         {activeStep.id === "prompt-generation" ? (
           <StepFiveSection
             project={project}
-            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
-            setStatusMessage={setStatusMessage}
+            onSaved={(nextProject, message) => handleProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={announceStatusMessage}
           />
         ) : null}
         {activeStep.id === "image-generation" ? (
           <StepSixSection
             project={project}
-            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
-            setStatusMessage={setStatusMessage}
+            onSaved={(nextProject, message) => handleProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={announceStatusMessage}
           />
         ) : null}
         {activeStep.id === "quality-rework" ? (
           <StepSevenSection
             project={project}
-            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
-            setStatusMessage={setStatusMessage}
+            onSaved={(nextProject, message) => handleProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={announceStatusMessage}
           />
         ) : null}
         {activeStep.id === "video-generation" ? (
           <StepEightSection
             project={project}
-            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
-            setStatusMessage={setStatusMessage}
+            onSaved={(nextProject, message) => handleProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={announceStatusMessage}
           />
         ) : null}
         {activeStep.id === "audio-subtitle" ? (
           <StepNineSection
             project={project}
-            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
-            setStatusMessage={setStatusMessage}
+            onSaved={(nextProject, message) => handleProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={announceStatusMessage}
           />
         ) : null}
         {activeStep.id === "final-editing" ? (
           <StepTenSection
             project={project}
-            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
-            setStatusMessage={setStatusMessage}
+            onSaved={(nextProject, message) => handleProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={announceStatusMessage}
           />
         ) : null}
         {activeStep.id === "publish-review" ? (
           <StepElevenSection
             project={project}
-            onSaved={(nextProject, message) => onProjectSaved(mergeProjectDefaults(nextProject), message)}
-            setStatusMessage={setStatusMessage}
+            onSaved={(nextProject, message) => handleProjectSaved(mergeProjectDefaults(nextProject), message)}
+            setStatusMessage={announceStatusMessage}
           />
         ) : null}
 
@@ -2990,7 +3003,14 @@ function StepOneSection({
               }}
             />
             <ImportFileButton label="导入故事思路文件" filename={form.imported_story_name} onChange={handleImport} />
-            <button className="ghost-button inline-button" type="button" onClick={() => updateForm(defaultStepOneData(project.name))}>
+            <button
+              className="ghost-button inline-button"
+              type="button"
+              onClick={() => {
+                updateForm(defaultStepOneData(project.name));
+                setStatusMessage("步骤一表单已清空，保存后生效。");
+              }}
+            >
               清空当前步骤
             </button>
             <button className="ghost-button inline-button strong" type="button" onClick={handleSave} disabled={saving}>
@@ -3096,7 +3116,7 @@ function StepOneSection({
           <button
             className="ghost-button inline-button"
             type="button"
-            onClick={() =>
+            onClick={() => {
               updateForm({
                 ...form,
                 relationships: [
@@ -3109,8 +3129,9 @@ function StepOneSection({
                     conflict: "围绕同一资源产生竞争",
                   },
                 ],
-              })
-            }
+              });
+              setStatusMessage("已添加关系样例，可继续编辑后保存。");
+            }}
           >
             添加关系样例
           </button>
@@ -3988,12 +4009,14 @@ function StepThreeSection({
   }
 
   function addSelectedCandidates() {
-    setAssetLibrary((current) => ({
+    setAssetLibrary((current) => {
+      const selectedCandidates = current.candidates.filter((item) => item.selected);
+      return {
       ...current,
       characters: [
         ...current.characters,
-        ...current.candidates
-          .filter((item) => item.selected && item.category === "character")
+        ...selectedCandidates
+          .filter((item) => item.category === "character")
           .map((item) => ({
             id: `char-${item.id}`,
             name: item.name,
@@ -4007,8 +4030,8 @@ function StepThreeSection({
       ],
       scenes: [
         ...current.scenes,
-        ...current.candidates
-          .filter((item) => item.selected && item.category === "scene")
+        ...selectedCandidates
+          .filter((item) => item.category === "scene")
           .map((item) => ({
             id: `scene-${item.id}`,
             name: item.name,
@@ -4019,8 +4042,8 @@ function StepThreeSection({
       ],
       props: [
         ...current.props,
-        ...current.candidates
-          .filter((item) => item.selected && item.category === "prop")
+        ...selectedCandidates
+          .filter((item) => item.category === "prop")
           .map((item) => ({
             id: `prop-${item.id}`,
             name: item.name,
@@ -4028,7 +4051,10 @@ function StepThreeSection({
             story_function: item.description,
           })),
       ],
-    }));
+    };
+    });
+    const selectedCount = assetLibrary.candidates.filter((item) => item.selected).length;
+    setStatusMessage?.(selectedCount ? `已加入 ${selectedCount} 个候选到资产库，保存后生效。` : "没有勾选资产候选，未加入资产库。");
   }
 
   function addCharacter() {
@@ -4048,6 +4074,7 @@ function StepThreeSection({
         },
       ],
     }));
+    setStatusMessage?.("已新增角色卡，保存资产后生效。");
   }
 
   function removeCharacter(characterId: string) {
@@ -4142,14 +4169,15 @@ function StepThreeSection({
                   <button
                     className="ghost-mini-button"
                     type="button"
-                    onClick={() =>
+                    onClick={() => {
                       setAssetLibrary((current) => ({
                         ...current,
                         candidates: current.candidates.map((candidate) =>
                           candidate.id === item.id ? { ...candidate, selected: !candidate.selected } : candidate
                         ),
-                      }))
-                    }
+                      }));
+                      setStatusMessage?.(`${item.name} 已${item.selected ? "取消勾选" : "勾选"}，保存资产后生效。`);
+                    }}
                   >
                     {item.selected ? "已勾选" : "未勾选"}
                   </button>
@@ -4295,6 +4323,7 @@ function StepFourSection({
         },
       ],
     }));
+    setStatusMessage("已新增镜头，保存分镜后生效。");
   }
 
   function removeShot(shotId: string) {
@@ -4439,7 +4468,17 @@ function StepFiveSection({
   }
 
   function batchReplace() {
-    if (!form.batch_replace_from) return;
+    if (!form.batch_replace_from) {
+      setStatusMessage("请先填写要查找替换的词。");
+      return;
+    }
+    const replaceCount = form.prompts.reduce(
+      (sum, item) =>
+        sum +
+        item.t2i_prompt.split(form.batch_replace_from).length - 1 +
+        item.i2v_prompt.split(form.batch_replace_from).length - 1,
+      0
+    );
     setForm((current) => ({
       ...current,
       prompts: current.prompts.map((item) => ({
@@ -4448,6 +4487,7 @@ function StepFiveSection({
         i2v_prompt: item.i2v_prompt.split(current.batch_replace_from).join(current.batch_replace_to),
       })),
     }));
+    setStatusMessage(replaceCount ? `已完成 ${replaceCount} 处提示词替换。` : "没有匹配到可替换内容。");
   }
 
   async function handleSave() {
@@ -4641,6 +4681,14 @@ function StepSixSection({
     setStatusMessage(report);
   }
 
+  function markImageStatus(image: ImageCandidate, status: ImageCandidate["status"], label: string) {
+    setForm((current) => ({
+      ...current,
+      candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status } : item),
+    }));
+    setStatusMessage(`${image.shot_label} 已标记为${label}，保存候选图后生效。`);
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -4684,10 +4732,10 @@ function StepSixSection({
             <strong>{image.shot_label} · {image.status}</strong>
             <p>{image.metadata}</p>
             <div className="action-row">
-              <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "first-frame" } : item) }))}>首帧</button>
-              <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "keyframe" } : item) }))}>关键帧</button>
-              <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "selected" } : item) }))}>入选</button>
-              <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, candidates: current.candidates.map((item) => item.id === image.id ? { ...item, status: "discarded" } : item) }))}>废弃</button>
+              <button className="ghost-mini-button" type="button" onClick={() => markImageStatus(image, "first-frame", "首帧")}>首帧</button>
+              <button className="ghost-mini-button" type="button" onClick={() => markImageStatus(image, "keyframe", "关键帧")}>关键帧</button>
+              <button className="ghost-mini-button" type="button" onClick={() => markImageStatus(image, "selected", "入选")}>入选</button>
+              <button className="ghost-mini-button" type="button" onClick={() => markImageStatus(image, "discarded", "废弃")}>废弃</button>
               <AIActionButton
                 className="ghost-mini-button"
                 isGenerating={imageGenerationAction === `regenerate:${image.shot_id}`}
@@ -4947,6 +4995,11 @@ function StepEightSection({
     setForm((current) => ({ ...current, clips: current.clips.map((item) => item.id === clipId ? { ...item, ...patch } : item) }));
   }
 
+  function markClipStatus(clip: VideoClipItem, patch: Partial<VideoClipItem>, label: string) {
+    updateClip(clip.id, patch);
+    setStatusMessage(`${clip.shot_label} 已${label}，保存视频后生效。`);
+  }
+
   async function regenerateClip(clip: VideoClipItem) {
     if (videoGenerationAction) return;
     const sourceImage = usableImages.find((image) => image.id === clip.source_image_id);
@@ -5063,8 +5116,8 @@ function StepEightSection({
             <small>{clip.metadata}</small>
             <input value={clip.fail_reason} onChange={(event) => updateClip(clip.id, { fail_reason: event.target.value })} placeholder="失败原因：人物变形/动作错/镜头不符" />
             <div className="action-row">
-              <button className="ghost-mini-button" type="button" onClick={() => updateClip(clip.id, { status: "final" })}>设为最终</button>
-              <button className="ghost-mini-button" type="button" onClick={() => updateClip(clip.id, { status: "failed", fail_reason: clip.fail_reason || "人工标记失败" })}>标记失败</button>
+              <button className="ghost-mini-button" type="button" onClick={() => markClipStatus(clip, { status: "final" }, "设为最终视频片段")}>设为最终</button>
+              <button className="ghost-mini-button" type="button" onClick={() => markClipStatus(clip, { status: "failed", fail_reason: clip.fail_reason || "人工标记失败" }, "标记失败")}>标记失败</button>
               <AIActionButton
                 className="ghost-mini-button"
                 isGenerating={videoGenerationAction === `refresh:${clip.id}`}
@@ -5450,6 +5503,11 @@ function StepTenSection({
     setStatusMessage(report);
   }
 
+  function selectDefaultCover(cover: CoverCandidate) {
+    setForm((current) => ({ ...current, cover_candidates: current.cover_candidates.map((item) => ({ ...item, selected: item.id === cover.id })) }));
+    setStatusMessage(`已设为默认封面：${cover.title}`);
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -5496,7 +5554,7 @@ function StepTenSection({
             <img src={cover.image_url} alt={cover.title} />
             <strong>{cover.title}</strong>
             <span>{cover.subtitle}</span>
-            <button className="ghost-mini-button" type="button" onClick={() => setForm((current) => ({ ...current, cover_candidates: current.cover_candidates.map((item) => ({ ...item, selected: item.id === cover.id })) }))}>设为默认封面</button>
+            <button className="ghost-mini-button" type="button" onClick={() => selectDefaultCover(cover)}>设为默认封面</button>
           </article>
         ))}
       </div>
@@ -5553,6 +5611,7 @@ function StepElevenSection({
       publish_records: [...current.publish_records, { id: `pub-${Date.now()}`, platform: "抖音", publish_time: new Date().toLocaleString(), version: "竖版", title: project.name, cover: "默认封面" }],
       metrics: [...current.metrics, { id: `metric-${Date.now()}`, platform: "抖音", plays: 12000, completion_rate: 62, likes: 820, comments: 96, favorites: 310, shares: 124, followers: 88 }],
     }));
+    setStatusMessage("已新增发布记录与数据占位，请按真实平台数据手动修改。");
   }
 
   function summarizeMetrics(metrics = form.metrics) {

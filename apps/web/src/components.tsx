@@ -228,9 +228,11 @@ export function AIGenerationButtonGroup({
       >
         {isGenerating ? "等待生成完成" : "重新生成"}
       </button>
-      <button className="ghost-button inline-button" type="button" onClick={onStop} disabled={!onStop || disabled || !isGenerating}>
-        停止
-      </button>
+      {onStop ? (
+        <button className="ghost-button inline-button" type="button" onClick={onStop} disabled={disabled || !isGenerating}>
+          停止
+        </button>
+      ) : null}
       <button className="ghost-button inline-button" type="button" onClick={onCopyPrompt} disabled={!onCopyPrompt || isGenerating}>
         复制提示词
       </button>
