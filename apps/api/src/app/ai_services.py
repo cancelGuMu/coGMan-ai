@@ -36,6 +36,21 @@ def build_image_generation_prompt(prompt: str, shot_label: str = "") -> str:
     return f"{IMAGE_GENERATION_CONSTRAINTS}\n\n目标位置：step_six.candidates 或 step_three 资产图字段。\n镜头/资产标签：{label}\n\n用户/上游提示词：\n{prompt.strip()}"
 
 
+def resolve_image_size(prompt: str, shot_label: str = "") -> str:
+    configured = os.environ.get("IMAGE_GENERATION_SIZE", "auto").strip()
+    combined = f"{shot_label}\n{prompt}"
+    wide_markers = ("三视图", "正面、侧面、背面", "正面、侧面、背面并排", "横版构图", "场景概念图", "空间结构")
+    vertical_markers = ("竖版", "封面", "海报", "portrait", "vertical")
+    square_markers = ("头像", "单个物件", "图标", "logo", "icon")
+    if any(marker in combined for marker in wide_markers):
+        return "1536x1024"
+    if any(marker in combined for marker in vertical_markers):
+        return "1024x1536"
+    if any(marker in combined for marker in square_markers):
+        return "1024x1024"
+    return configured or "auto"
+
+
 def build_video_generation_prompt(prompt: str, shot_label: str = "") -> str:
     label = shot_label.strip() or "未命名镜头"
     return f"{VIDEO_GENERATION_CONSTRAINTS}\n\n目标位置：step_eight.clips。\n镜头标签：{label}\n\n用户/上游提示词：\n{prompt.strip()}"
@@ -142,9 +157,12 @@ def generate_image(prompt: str, shot_label: str = "") -> dict[str, str]:
         "model": model,
         "prompt": build_image_generation_prompt(prompt, shot_label),
         "n": 1,
-        "size": _env("IMAGE_GENERATION_SIZE", "1024x1024"),
-        "quality": _env("IMAGE_GENERATION_QUALITY", "medium"),
+        "size": resolve_image_size(prompt, shot_label),
+        "quality": _env("IMAGE_GENERATION_QUALITY", "auto"),
     }
+    group = _env("IMAGE_GENERATION_GROUP")
+    if group:
+        payload["group"] = group
     data = _post_json(
         _api_url(base_url, "/v1/images/generations"),
         payload,

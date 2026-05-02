@@ -102,6 +102,32 @@ def test_image_generation_prompt_contains_hard_constraints(monkeypatch) -> None:
     assert "不在画面中生成字幕" in prompt
 
 
+def test_image_generation_uses_aiartmirror_successful_options(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setenv("IMAGE_GENERATION_API_KEY", "test-key")
+    monkeypatch.setenv("IMAGE_GENERATION_BASE_URL", "https://www.aiartmirror.com")
+    monkeypatch.setenv("IMAGE_GENERATION_MODEL", "gpt-image-2")
+    monkeypatch.setenv("IMAGE_GENERATION_QUALITY", "auto")
+    monkeypatch.setenv("IMAGE_GENERATION_SIZE", "auto")
+
+    def fake_post(url: str, payload: dict[str, Any], headers: dict[str, str], timeout: int = 120) -> dict[str, Any]:
+        captured.update({"url": url, "payload": payload, "headers": headers, "timeout": timeout})
+        return {"created": 1, "data": [{"b64_json": "iVBORw0KGgo="}]}
+
+    monkeypatch.setattr(ai_services, "_post_json", fake_post)
+
+    result = ai_services.generate_image(
+        "\u751f\u6210\u89d2\u8272\u8bbe\u5b9a\u4e09\u89c6\u56fe\uff0c\u6b63\u9762\u3001\u4fa7\u9762\u3001\u80cc\u9762\u5e76\u6392\uff0c\u5e72\u51c0\u6d45\u8272\u80cc\u666f",
+        "\u6d4b\u8bd5\u89d2\u8272",
+    )
+
+    assert captured["url"] == "https://www.aiartmirror.com/v1/images/generations"
+    assert captured["payload"]["model"] == "gpt-image-2"
+    assert captured["payload"]["quality"] == "auto"
+    assert captured["payload"]["size"] == "1536x1024"
+    assert result["url"].startswith("data:image/png;base64,")
+
+
 def test_video_generation_prompt_contains_hard_constraints(monkeypatch) -> None:
     captured: dict[str, Any] = {}
     monkeypatch.setenv("MINIMAX_API_KEY", "test-key")
