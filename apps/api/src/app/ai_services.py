@@ -15,6 +15,32 @@ class AIServiceError(RuntimeError):
     pass
 
 
+IMAGE_GENERATION_CONSTRAINTS = """coMGan-ai 图片生成硬约束：
+1. 严格执行传入的角色、场景、道具、构图、风格和锁定词，不自行改名、换服装或换场景。
+2. 不在画面中生成字幕、水印、乱码文字、界面元素或说明文字。
+3. 资产设定图必须清晰展示外貌/服装/结构；镜头图必须服务对应 shot_id 的画面目标。
+4. 遇到输入缺少信息时，用保守、可追溯的视觉补全，不引入与项目无关的新设定。
+5. 输出必须是可用于 coMGan-ai 工作台候选图/关键帧/资产图回显的单张图像。"""
+
+
+VIDEO_GENERATION_CONSTRAINTS = """coMGan-ai 视频生成硬约束：
+1. 严格继承输入首帧、镜头提示词、角色服装、场景、道具和镜头时长，不漂移到新剧情。
+2. 动作、表情和运镜只围绕当前 shot_id 的分镜目标展开，不新增角色、不改结局。
+3. 不生成字幕、水印、界面元素或不可控文字。
+4. 若提示中包含失败原因或重生成策略，只修复该问题，保留原镜头可用部分。
+5. 输出必须是可回填到 coMGan-ai 工作台候选视频/最终视频字段的视频任务。"""
+
+
+def build_image_generation_prompt(prompt: str, shot_label: str = "") -> str:
+    label = shot_label.strip() or "未命名镜头/资产"
+    return f"{IMAGE_GENERATION_CONSTRAINTS}\n\n目标位置：step_six.candidates 或 step_three 资产图字段。\n镜头/资产标签：{label}\n\n用户/上游提示词：\n{prompt.strip()}"
+
+
+def build_video_generation_prompt(prompt: str, shot_label: str = "") -> str:
+    label = shot_label.strip() or "未命名镜头"
+    return f"{VIDEO_GENERATION_CONSTRAINTS}\n\n目标位置：step_eight.clips。\n镜头标签：{label}\n\n用户/上游提示词：\n{prompt.strip()}"
+
+
 def load_env_files() -> None:
     roots = [
         Path(__file__).resolve().parents[2],
@@ -35,6 +61,14 @@ def load_env_files() -> None:
 
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
+
+
+def _api_url(base_url: str, path: str) -> str:
+    normalized_base = base_url.rstrip("/")
+    normalized_path = path if path.startswith("/") else f"/{path}"
+    if normalized_base.endswith("/v1") and normalized_path.startswith("/v1/"):
+        normalized_path = normalized_path[3:]
+    return f"{normalized_base}{normalized_path}"
 
 
 def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str], timeout: int = 120) -> dict[str, Any]:
@@ -83,7 +117,7 @@ def generate_deepseek_text(project_name: str, prompt: str, mode: str, task_id: s
         "thinking": {"type": _env("DEEPSEEK_THINKING", "enabled")},
     }
     data = _post_json(
-        f"{base_url}/chat/completions",
+        _api_url(base_url, "/chat/completions"),
         payload,
         {"Authorization": f"Bearer {api_key}"},
         timeout=180,
@@ -102,17 +136,17 @@ def generate_image(prompt: str, shot_label: str = "") -> dict[str, str]:
     if not api_key:
         raise AIServiceError("缺少 IMAGE_GENERATION_API_KEY")
 
-    base_url = _env("IMAGE_GENERATION_BASE_URL", "https://tokhub.ai").rstrip("/")
+    base_url = _env("IMAGE_GENERATION_BASE_URL", "https://www.aiartmirror.com").rstrip("/")
     model = _env("IMAGE_GENERATION_MODEL", "gpt-image-2")
     payload = {
         "model": model,
-        "prompt": prompt,
+        "prompt": build_image_generation_prompt(prompt, shot_label),
         "n": 1,
         "size": _env("IMAGE_GENERATION_SIZE", "1024x1024"),
         "quality": _env("IMAGE_GENERATION_QUALITY", "medium"),
     }
     data = _post_json(
-        f"{base_url}/v1/images/generations",
+        _api_url(base_url, "/v1/images/generations"),
         payload,
         {"Authorization": f"Bearer {api_key}"},
         timeout=240,
@@ -130,12 +164,12 @@ def generate_image(prompt: str, shot_label: str = "") -> dict[str, str]:
     return {
         "url": url,
         "model": model,
-        "provider": "TokHub / NewAPI",
+        "provider": "AIArtMirror / NewAPI",
         "metadata": f"{shot_label or '未命名镜头'}；{model}；{data.get('created', '')}",
     }
 
 
-def create_minimax_video(prompt: str, first_frame_image: str | None = None, duration: int = 6) -> dict[str, str]:
+def create_minimax_video(prompt: str, first_frame_image: str | None = None, duration: int = 6, shot_label: str = "") -> dict[str, str]:
     api_key = _env("MINIMAX_API_KEY")
     if not api_key:
         raise AIServiceError("缺少 MINIMAX_API_KEY")
@@ -143,7 +177,7 @@ def create_minimax_video(prompt: str, first_frame_image: str | None = None, dura
     model = _env("MINIMAX_VIDEO_MODEL", "MiniMax-Hailuo-2.3")
     payload: dict[str, Any] = {
         "model": model,
-        "prompt": prompt,
+        "prompt": build_video_generation_prompt(prompt, shot_label),
         "duration": duration,
         "resolution": _env("MINIMAX_VIDEO_RESOLUTION", "1080P"),
     }

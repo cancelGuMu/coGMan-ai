@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .models import (
+    AssetCharacter,
     CreateProjectRequest,
     EpisodeDraft,
     ProjectRecord,
@@ -52,13 +53,78 @@ def _read_records() -> list[ProjectRecord]:
     for item in raw.get("projects", []):
         if item.get("current_step") in LEGACY_STEP_MAP:
             item = {**item, "current_step": LEGACY_STEP_MAP[item["current_step"]]}
-        records.append(ProjectRecord.model_validate(item))
+        records.append(_clean_project_record(ProjectRecord.model_validate(item)))
     return records
 
 
 def _write_records(records: list[ProjectRecord]) -> None:
     payload = {"projects": [record.model_dump(mode="json") for record in records]}
     DATA_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _compact_asset_text(value: str) -> str:
+    return "".join(ch for ch in value if ch not in " \n\r\t，。；;、:：,.")
+
+
+def _has_asset_text(value: str) -> bool:
+    text = value.strip()
+    return bool(text) and text not in {"待补充", "未填写", "暂无", "无", "待定", "主要角色", "????", "??"}
+
+
+def _character_issues(character: AssetCharacter) -> list[str]:
+    issues: list[str] = []
+    required = {
+        "角色名": character.name,
+        "定位": character.role,
+        "年龄": character.age,
+        "性格": character.personality,
+        "外貌": character.appearance,
+        "动机": character.motivation,
+        "服装": character.outfit,
+    }
+    for label, value in required.items():
+        if not _has_asset_text(value):
+            issues.append(f"{label}缺失")
+    field_hints = {
+        "性格": (character.personality, ("穿", "外套", "胎记", "身形", "服装", "发型", "投毒")),
+        "外貌": (character.appearance, ("动机", "目标", "案后", "消失", "可能", "调查", "投毒案", "定位")),
+        "动机": (character.motivation, ("外套", "服装", "高瘦", "身形", "发型", "站姿", "穿")),
+        "服装": (character.outfit, ("动机", "目标", "案件", "可能", "调查", "性格", "胎记")),
+    }
+    for label, (value, hints) in field_hints.items():
+        if any(hint in value for hint in hints):
+            issues.append(f"{label}串位")
+    comparable = {
+        "性格": _compact_asset_text(character.personality),
+        "外貌": _compact_asset_text(character.appearance),
+        "动机": _compact_asset_text(character.motivation),
+        "服装": _compact_asset_text(character.outfit),
+    }
+    items = list(comparable.items())
+    for index, (label, value) in enumerate(items):
+        for other_label, other_value in items[index + 1:]:
+            if len(value) > 16 and value == other_value:
+                issues.append(f"{label}与{other_label}重复")
+    return issues
+
+
+def _clean_project_record(record: ProjectRecord) -> ProjectRecord:
+    valid_characters = [character for character in record.step_three.characters if not _character_issues(character)]
+    if len(valid_characters) == len(record.step_three.characters):
+        return record
+    note = "已拦截历史不合格角色卡：字段缺失、串位或重复。请重新使用 AI 补全生成。"
+    return record.model_copy(
+        update={
+            "step_three": record.step_three.model_copy(
+                update={
+                    "characters": valid_characters,
+                    "reference_notes": "\n".join(
+                        item for item in [record.step_three.reference_notes.strip(), note] if item
+                    ),
+                }
+            )
+        }
+    )
 
 
 def list_projects() -> list[ProjectSummary]:

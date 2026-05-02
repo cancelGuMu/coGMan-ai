@@ -8,7 +8,6 @@ import {
   LoadingSkeleton,
   NextStepButton,
   StepStatusDot,
-  ThreeColumnWorkbench,
   VersionHistoryPanel,
   type VersionRecord,
 } from "./components";
@@ -245,6 +244,110 @@ function textValue(value: unknown, fallback = ""): string {
   return fallback;
 }
 
+function compactForCompare(value: string): string {
+  return value.replace(/\s|，|。|；|、|:|：|,|\.|;/g, "");
+}
+
+function hasText(value: string): boolean {
+  const text = value.trim();
+  return Boolean(text) && !["待补充", "未填写", "暂无", "无", "待定"].includes(text);
+}
+
+function pickText(record: Record<string, unknown>, keys: string[], fallback = ""): string {
+  for (const key of keys) {
+    const value = textValue(record[key]);
+    if (value) return value;
+  }
+  return fallback;
+}
+
+function splitAssetText(value: string): string[] {
+  return value
+    .split(/\n|。|；|;/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function rejectMixedCharacterField(field: keyof Pick<AssetCharacter, "personality" | "appearance" | "motivation" | "outfit">, value: string): string | null {
+  const text = value.trim();
+  if (!hasText(text)) return "字段为空";
+  const mixedHints: Record<typeof field, string[]> = {
+    personality: ["穿", "外套", "胎记", "身形", "服装", "发型", "案件", "投毒"],
+    appearance: ["动机", "目标", "案后", "消失", "可能", "调查", "投毒案", "定位"],
+    motivation: ["外套", "服装", "高瘦", "身形", "发型", "站姿", "穿"],
+    outfit: ["动机", "目标", "案件", "可能", "调查", "性格", "胎记"],
+  };
+  const hit = mixedHints[field].find((hint) => text.includes(hint));
+  return hit ? `字段疑似串位：${hit}` : null;
+}
+
+function validateCharacterCard(card: AssetCharacter): string[] {
+  const issues: string[] = [];
+  const required: Array<[keyof AssetCharacter, string]> = [
+    ["name", "角色名"],
+    ["role", "定位"],
+    ["age", "年龄"],
+    ["personality", "性格"],
+    ["appearance", "外貌"],
+    ["motivation", "动机"],
+    ["outfit", "服装"],
+  ];
+  required.forEach(([key, label]) => {
+    if (!hasText(String(card[key] ?? ""))) issues.push(`${label}缺失`);
+  });
+  (["personality", "appearance", "motivation", "outfit"] as const).forEach((key) => {
+    const issue = rejectMixedCharacterField(key, card[key]);
+    if (issue) issues.push(`${key} ${issue}`);
+  });
+  const comparable = [
+    ["性格", card.personality],
+    ["外貌", card.appearance],
+    ["动机", card.motivation],
+    ["服装", card.outfit],
+  ].map(([label, value]) => [label, compactForCompare(String(value))] as const);
+  comparable.forEach(([label, value], index) => {
+    comparable.slice(index + 1).forEach(([otherLabel, otherValue]) => {
+      if (value.length > 16 && value === otherValue) issues.push(`${label}与${otherLabel}重复`);
+    });
+  });
+  return issues;
+}
+
+function normalizeCharacterRecord(record: Record<string, unknown>, fallbackId: string, fallbackName: string): { card: AssetCharacter; issues: string[] } {
+  const card: AssetCharacter = {
+    id: fallbackId,
+    name: pickText(record, ["name", "character_name", "角色名"], fallbackName),
+    role: pickText(record, ["role", "position", "identity", "role_position", "定位"]),
+    age: pickText(record, ["age", "visual_age", "年龄"]),
+    personality: pickText(record, ["personality", "traits", "temperament", "性格"]),
+    appearance: pickText(record, ["appearance", "visual_appearance", "face_body", "body_shape", "signature_marks", "外貌"]),
+    motivation: pickText(record, ["motivation", "goal", "desire", "story_goal", "动机"]),
+    outfit: pickText(record, ["outfit", "costume", "clothing", "wardrobe", "服装"]),
+  };
+  return { card, issues: validateCharacterCard(card) };
+}
+
+function buildCharacterCardPrompt(projectName: string, source: string, currentAsset?: AssetCharacter): string {
+  return [
+    `项目名称：${projectName}`,
+    "强制字段要求：角色卡必须一次性补齐 name、role、age、personality、motivation、appearance、outfit。",
+    "字段边界：",
+    "1. role 只写身份/剧情定位，不写外貌、动机或案情长句。",
+    "2. age 必须给明确年龄；原文没有时写“视觉年龄约X岁，真实年龄待确认”。",
+    "3. personality 只写性格和行为习惯，不写服装、外貌、案件事实。",
+    "4. motivation 只写角色欲望、目标、秘密或行动驱动力，不写外貌、服装。",
+    "5. appearance 只写脸型、体型、发色/发型、五官、标志物，不写身份、动机、案件经过。",
+    "6. outfit 只写服装、配饰、材质、颜色和可复用穿搭，不写动机、案件经过。",
+    "7. 每个字段必须是独立内容，禁止把同一段文本复制到多个字段。",
+    "8. 不得输出空字段、待补充、暂无、主要角色这类占位。",
+    "如果上游没有明确字段，请基于已有故事做保守视觉设定，并在字段内写明“待确认”的事实边界。",
+    currentAsset ? "只补全/修复这一张角色卡，不要新增其他角色。" : "按上游素材生成角色卡。",
+    currentAsset ? `当前角色卡：\n${JSON.stringify(currentAsset, null, 2)}` : "",
+    "上游来源：",
+    source,
+  ].filter(Boolean).join("\n");
+}
+
 function listValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
@@ -273,6 +376,10 @@ function severityValue(value: unknown): "low" | "medium" | "high" {
 
 async function generateProjectTextTask(projectName: string, taskId: string, prompt: string) {
   return generateTextTask({ project_name: projectName, task_id: taskId, mode: taskId.toLowerCase(), prompt });
+}
+
+function parseStrictJsonOutput(raw: string): Record<string, unknown> {
+  return firstJsonObject(raw);
 }
 
 const stepTwoTaskIds: Record<string, string> = {
@@ -4054,6 +4161,7 @@ function StepThreeSection({
 
   async function extractAssetCandidates() {
     if (aiAction) return;
+    const now = Date.now();
     const source = [
       "角色画像：",
       project.step_two.character_profiles || "暂无",
@@ -4067,91 +4175,74 @@ function StepThreeSection({
       project.step_one.season_outline || project.step_one.core_story_idea || "暂无",
     ].join("\n");
     setAiAction("extract-assets");
-    setStatusMessage?.("AI 正在提取资产候选...");
+    setStatusMessage?.("AI 正在从角色、术语和剧本中提取资产卡片...");
     try {
-      const result = await generateProjectTextTask(project.name, "S03_ASSET_EXTRACT", source);
+      const result = await generateProjectTextTask(project.name, "S03_ASSET_EXTRACT", buildCharacterCardPrompt(project.name, source));
       const parsed = firstJsonObject(result.content);
-      const candidates = listValue(parsed.candidates)
-        .map((item, index) => {
-          if (!item || typeof item !== "object") return null;
-          const record = item as Record<string, unknown>;
-          const category = textValue(record.category);
-          if (!["character", "scene", "prop"].includes(category)) return null;
-          return {
-            id: `cand-ai-${Date.now()}-${index}`,
-            category: category as "character" | "scene" | "prop",
-            name: textValue(record.name, `${category}-${index + 1}`),
-            description: textValue(record.description) || textValue(record.source_evidence),
-            selected: record.recommended !== false,
-          };
-        })
-        .filter((item): item is NonNullable<typeof item> => Boolean(item));
-      if (!candidates.length) {
-        setStatusMessage?.("AI 返回格式异常，未提取到资产候选。");
+      const typedRecords = (value: unknown, category: "character" | "scene" | "prop") =>
+        listValue(value).flatMap((item): Record<string, unknown>[] =>
+          item && typeof item === "object" ? [{ ...(item as Record<string, unknown>), category }] : []
+        );
+      const records = [
+        ...listValue(parsed.candidates || parsed.assets || parsed.items),
+        ...typedRecords(parsed.characters, "character"),
+        ...typedRecords(parsed.scenes, "scene"),
+        ...typedRecords(parsed.props, "prop"),
+      ].filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object");
+
+      const characters: AssetCharacter[] = [];
+      const scenes: AssetScene[] = [];
+      const props: AssetProp[] = [];
+
+      records.forEach((record, index) => {
+        const categoryText = textValue(record.category || record.asset_type || record.type).toLowerCase();
+        const description = textValue(record.description || record.source_evidence || record.summary || record.visual_design);
+        const isCharacter = categoryText.includes("character") || categoryText.includes("role") || categoryText.includes("角色") || categoryText.includes("人物");
+        const isScene = categoryText.includes("scene") || categoryText.includes("location") || categoryText.includes("场景") || categoryText.includes("地点");
+        const isProp = categoryText.includes("prop") || categoryText.includes("item") || categoryText.includes("道具") || categoryText.includes("物件");
+
+        if (isCharacter) {
+          const normalized = normalizeCharacterRecord(record, `char-ai-${now}-${index}`, textValue(record.name || record.character_name, `角色 ${characters.length + 1}`));
+          if (!normalized.issues.length) characters.push(normalized.card);
+        } else if (isScene) {
+          scenes.push({
+            id: `scene-ai-${now}-${index}`,
+            name: textValue(record.name || record.scene_name || record.location, `场景 ${scenes.length + 1}`),
+            location: textValue(record.location || record.spatial_layout || record.name),
+            atmosphere: textValue(record.atmosphere || record.lighting || description),
+            episodes: textValue(record.episodes || record.first_seen, String(project.step_two.selected_episode_number || 1)),
+          });
+        } else if (isProp) {
+          props.push({
+            id: `prop-ai-${now}-${index}`,
+            name: textValue(record.name || record.prop_name, `道具 ${props.length + 1}`),
+            type: textValue(record.prop_type || record.item_type || record.category, "剧情道具"),
+            story_function: textValue(record.story_function || description),
+          });
+        }
+      });
+
+      const total = characters.length + scenes.length + props.length;
+      if (!total) {
+        setStatusMessage?.("AI 已返回，但字段不达标，未写入资产卡。请重新生成或先补充上游素材。");
         return;
       }
-      setAssetLibrary((current) => ({ ...current, candidates }));
-      setStatusMessage?.(`AI 已提取 ${candidates.length} 个资产候选。`);
+      setAssetLibrary((current) => ({
+        ...current,
+        candidates: [],
+        characters: [...current.characters, ...characters],
+        scenes: [...current.scenes, ...scenes],
+        props: [...current.props, ...props],
+      }));
+      if (characters.length) setAssetPage("characters");
+      else if (scenes.length) setAssetPage("scenes");
+      else setAssetPage("props");
+      setStatusMessage?.(`AI 已生成 ${total} 张合格资产卡：角色 ${characters.length}，场景 ${scenes.length}，道具 ${props.length}。不合格字段已拦截。`);
     } catch (err) {
       setStatusMessage?.(err instanceof Error ? err.message : "AI 资产提取失败");
     } finally {
       setAiAction(null);
     }
-  }
-
-  function addSelectedCandidates() {
-    setAssetLibrary((current) => {
-      const selectedCandidates = current.candidates.filter((item) => item.selected);
-      return {
-      ...current,
-      characters: [
-        ...current.characters,
-        ...selectedCandidates
-          .filter((item) => item.category === "character")
-          .map((item) => ({
-            id: `char-${item.id}`,
-            name: item.name,
-            role: "主要角色",
-            age: "",
-            personality: "目标明确，行动果决",
-            appearance: "",
-            motivation: item.description,
-            outfit: "",
-            image_url: "",
-            image_prompt: "",
-          })),
-      ],
-      scenes: [
-        ...current.scenes,
-        ...selectedCandidates
-          .filter((item) => item.category === "scene")
-          .map((item) => ({
-            id: `scene-${item.id}`,
-            name: item.name,
-            location: item.name,
-            atmosphere: item.description,
-            episodes: String(project.step_two.selected_episode_number || 1),
-            image_url: "",
-            image_prompt: "",
-          })),
-      ],
-      props: [
-        ...current.props,
-        ...selectedCandidates
-          .filter((item) => item.category === "prop")
-          .map((item) => ({
-            id: `prop-${item.id}`,
-            name: item.name,
-            type: "剧情道具",
-            story_function: item.description,
-            image_url: "",
-            image_prompt: "",
-          })),
-      ],
-    };
-    });
-    const selectedCount = assetLibrary.candidates.filter((item) => item.selected).length;
-    setStatusMessage?.(selectedCount ? `已加入 ${selectedCount} 个候选到资产库，保存后生效。` : "没有勾选资产候选，未加入资产库。");
   }
 
   function addCharacter() {
@@ -4310,7 +4401,8 @@ function StepThreeSection({
     setAiAction(`generate-${kind}`);
     setStatusMessage?.(`AI 正在生成${labelMap[kind]}...`);
     try {
-      const result = await generateProjectTextTask(project.name, taskMap[kind], getAssetSourceText());
+      const sourceText = getAssetSourceText();
+      const result = await generateProjectTextTask(project.name, taskMap[kind], kind === "character" ? buildCharacterCardPrompt(project.name, sourceText) : sourceText);
       const parsed = firstJsonObject(result.content);
       const records = listValue(
         kind === "character"
@@ -4328,17 +4420,10 @@ function StepThreeSection({
           const characters = records.flatMap((item, index): AssetCharacter[] => {
             if (!item || typeof item !== "object") return [];
             const record = item as Record<string, unknown>;
-            return [{
-              id: `char-ai-${Date.now()}-${index}`,
-              name: textValue(record.name || record.character_name, `角色 ${current.characters.length + index + 1}`),
-              role: textValue(record.role || record.position, "待设定"),
-              age: textValue(record.age),
-              personality: textValue(record.personality),
-              appearance: textValue(record.appearance || record.visual_design || record.visual_cues),
-              motivation: textValue(record.motivation || record.story_function),
-              outfit: textValue(record.outfit || record.costume),
-            }];
+            const normalized = normalizeCharacterRecord(record, `char-ai-${Date.now()}-${index}`, `角色 ${current.characters.length + index + 1}`);
+            return normalized.issues.length ? [] : [normalized.card];
           });
+          if (!characters.length) return current;
           return { ...current, characters: [...current.characters, ...characters] };
         }
         if (kind === "scene") {
@@ -4367,7 +4452,7 @@ function StepThreeSection({
         });
         return { ...current, props: [...current.props, ...props] };
       });
-      setStatusMessage?.(`AI 已生成 ${records.length} 条${labelMap[kind]}，请检查后保存资产。`);
+      setStatusMessage?.(`AI 已生成并写入合格${labelMap[kind]}；字段缺失、串位或重复的结果已被拦截。`);
     } catch (err) {
       setStatusMessage?.(err instanceof Error ? err.message : `AI ${labelMap[kind]}生成失败`);
     } finally {
@@ -4401,13 +4486,15 @@ function StepThreeSection({
       const result = await generateProjectTextTask(
         project.name,
         taskMap[kind],
-        [
-          "请只补全这个用户手动新建或编辑过的单个资产卡，不要批量生成新资产。",
-          "已有资产卡：",
-          JSON.stringify(currentAsset, null, 2),
-          "上游来源：",
-          getAssetSourceText(),
-        ].join("\n")
+        kind === "character"
+          ? buildCharacterCardPrompt(project.name, getAssetSourceText(), currentAsset as AssetCharacter)
+          : [
+              "请只补全这个用户手动新建或编辑过的单个资产卡，不要批量生成新资产。",
+              "已有资产卡：",
+              JSON.stringify(currentAsset, null, 2),
+              "上游来源：",
+              getAssetSourceText(),
+            ].join("\n")
       );
       const parsed = firstJsonObject(result.content);
       const records = listValue(
@@ -4420,7 +4507,7 @@ function StepThreeSection({
       const record = (records[0] && typeof records[0] === "object" ? records[0] : parsed) as Record<string, unknown>;
       if (kind === "character") {
         const character = currentAsset as AssetCharacter;
-        updateCharacter(id, {
+        const candidate = {
           name: textValue(record.name || record.character_name, character.name),
           role: textValue(record.role || record.position, character.role),
           age: textValue(record.age, character.age),
@@ -4428,7 +4515,15 @@ function StepThreeSection({
           appearance: textValue(record.appearance || record.visual_design || record.visual_cues, character.appearance),
           motivation: textValue(record.motivation || record.story_function, character.motivation),
           outfit: textValue(record.outfit || record.costume, character.outfit),
-        });
+        };
+        const nextCard: AssetCharacter = { ...character, ...candidate };
+        const issues = validateCharacterCard(nextCard);
+        if (issues.length) {
+          setCardFeedback(id, `AI 返回仍不达标，未覆盖字段：${issues.slice(0, 4).join("；")}`);
+          setStatusMessage?.(`AI 补全结果不达标，已拦截：${issues.slice(0, 4).join("；")}`);
+          return;
+        }
+        updateCharacter(id, candidate);
       } else if (kind === "scene") {
         const scene = currentAsset as AssetScene;
         updateScene(id, {
@@ -4596,9 +4691,8 @@ function StepThreeSection({
         </div>
       </div>
 
-      <ThreeColumnWorkbench
-        className="asset-workbench"
-        left={
+      <div className="asset-workbench">
+        <div className="workbench-rail">
           <div className="panel-card asset-rail-card">
             <h3>资产分类</h3>
             <p className="asset-empty-copy">提取来源：步骤一「季纲/核心故事/人物关系」和步骤二「剧本文本/小说正文/素材」。</p>
@@ -4618,16 +4712,13 @@ function StepThreeSection({
               >
                 从角色/术语/剧本提取
               </AIActionButton>
-              <button className="ghost-button inline-button" type="button" onClick={addSelectedCandidates}>
-                加入资产库
-              </button>
               <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>
                 {saving ? "保存中..." : "保存资产"}
               </button>
             </div>
           </div>
-        }
-        center={
+        </div>
+        <div className="workbench-stage">
           <div className="panel-card">
             <div className="rewrite-head">
               <h3>资产卡片</h3>
@@ -4652,47 +4743,8 @@ function StepThreeSection({
               当前页面共有 {activeAssetCount} 张卡片。每张卡片都可以独立编辑、AI 补全、生成图片和删除。
             </p>
           </div>
-        }
-        right={
-          <div className="panel-card">
-            <div className="rewrite-head">
-              <h3>待提取资产候选</h3>
-              <button className="ghost-button inline-button" type="button" onClick={addSelectedCandidates}>
-                加入资产库
-              </button>
-            </div>
-            <p className="asset-empty-copy">从角色画像、术语库和剧本提取出的候选会先放在这里，勾选后加入对应页面。</p>
-            <div className="asset-placeholder-grid">
-              {assetLibrary.candidates.length ? assetLibrary.candidates.map((item) => (
-                <div className="overview-item" key={item.id}>
-                  <strong>{item.name} · {item.category}</strong>
-                  <span>{item.description}</span>
-                  <button
-                    className="ghost-mini-button"
-                    type="button"
-                    onClick={() => {
-                      setAssetLibrary((current) => ({
-                        ...current,
-                        candidates: current.candidates.map((candidate) =>
-                          candidate.id === item.id ? { ...candidate, selected: !candidate.selected } : candidate
-                        ),
-                      }));
-                      setStatusMessage?.(`${item.name} 已${item.selected ? "取消勾选" : "勾选"}，保存资产后生效。`);
-                    }}
-                  >
-                    {item.selected ? "已勾选" : "未勾选"}
-                  </button>
-                </div>
-              )) : ["角色候选", "场景候选", "道具候选", "风格板"].map((item) => (
-                <div className="overview-item" key={item}>
-                  <strong>{item}</strong>
-                  <span>等待从剧本和故事架构中提取。</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        }
-      />
+        </div>
+      </div>
 
       <div className="panel-card asset-page-panel">
         {assetPage === "characters" ? (
@@ -4767,7 +4819,6 @@ function StepThreeSection({
                   {assetFeedback[item.id] ? <span className="asset-card-feedback">{assetFeedback[item.id]}</span> : null}
                 </div>
               ))}
-              {!assetLibrary.characters.length ? <p className="asset-empty-copy">暂无角色卡，可以从上游提取，或手动新增后用 AI 补全。</p> : null}
           </div>
         ) : null}
         {assetPage === "scenes" ? (
@@ -4830,7 +4881,6 @@ function StepThreeSection({
                   {assetFeedback[item.id] ? <span className="asset-card-feedback">{assetFeedback[item.id]}</span> : null}
                 </div>
               ))}
-              {!assetLibrary.scenes.length ? <p className="asset-empty-copy">暂无场景卡，可以从上游提取，或手动新增后用 AI 补全。</p> : null}
           </div>
         ) : null}
         {assetPage === "props" ? (
@@ -4889,7 +4939,6 @@ function StepThreeSection({
                   {assetFeedback[item.id] ? <span className="asset-card-feedback">{assetFeedback[item.id]}</span> : null}
                 </div>
               ))}
-              {!assetLibrary.props.length ? <p className="asset-empty-copy">暂无道具卡，可以从上游提取，或手动新增后用 AI 补全。</p> : null}
           </div>
         ) : null}
       </div>
@@ -5151,7 +5200,7 @@ function StepFiveSection({
             `参数模板：${form.parameter_template}`,
           ].join("\n")
         );
-        const parsed = firstJsonObject(result.content);
+        const parsed = parseStrictJsonOutput(result.content);
         const positivePrompt = textValue(parsed.positive_prompt) || textValue(parsed.full_prompt);
         const motionPrompt = textValue(parsed.full_prompt) || textValue(parsed.motion_prompt);
         prompts.push({
@@ -5358,7 +5407,7 @@ function StepSixSection({
         "S06_REPAINT_PROMPT",
         JSON.stringify({ image, repaint_mask_note: form.repaint_mask_note, repaint_prompt: form.repaint_prompt }, null, 2)
       );
-      const parsed = firstJsonObject(result.content);
+      const parsed = parseStrictJsonOutput(result.content);
       const repaintPrompt = textValue(parsed.repaint_prompt, result.content);
       setForm((current) => ({
         ...current,
@@ -5666,14 +5715,31 @@ function StepEightSection({
       const clips: VideoClipItem[] = [];
       for (let index = 0; index < targets.length; index += 1) {
         const image = targets[index];
-        const duration = project.step_four.shots.find((shot) => shot.id === image.shot_id)?.duration_seconds ?? 6;
-        const motionPrompt = `${form.motion_settings}；${image.prompt}`;
+        const shot = project.step_four.shots.find((candidate) => candidate.id === image.shot_id);
+        const duration = shot?.duration_seconds ?? 6;
+        const promptRecord = project.step_five.prompts.find((prompt) => prompt.shot_id === image.shot_id);
+        const taskResult = await generateProjectTextTask(
+          project.name,
+          "S08_VIDEO_TASK",
+          JSON.stringify({
+            shot,
+            image,
+            i2v_prompt: promptRecord?.i2v_prompt,
+            negative_prompt: promptRecord?.negative_prompt,
+            motion_settings: form.motion_settings,
+            reference_bindings: form.reference_bindings,
+            qc_reports: project.step_seven.reports.filter((report) => report.asset_id === image.id),
+          }, null, 2)
+        );
+        const taskPayload = firstJsonObject(taskResult.content);
+        const motionPrompt = textValue(taskPayload.prompt, `${form.motion_settings}；${promptRecord?.i2v_prompt || image.prompt}`);
+        const negativePrompt = textValue(taskPayload.negative_prompt);
         const result = await generateVideoCandidate({
-          prompt: motionPrompt,
+          prompt: [motionPrompt, negativePrompt ? `负面限制：${negativePrompt}` : ""].filter(Boolean).join("\n"),
           shot_id: image.shot_id,
           shot_label: image.shot_label,
           source_image_url: image.url.startsWith("http") ? image.url : null,
-          duration_seconds: duration,
+          duration_seconds: Math.max(1, Math.round(numberValue(taskPayload.duration_seconds, duration))),
         });
         clips.push({
           id: `clip-${image.id}-${Date.now()}-${index}`,
@@ -5681,7 +5747,7 @@ function StepEightSection({
           shot_label: image.shot_label,
           source_image_id: image.id,
           url: "",
-          duration_seconds: duration,
+          duration_seconds: Math.max(1, Math.round(numberValue(taskPayload.duration_seconds, duration))),
           motion_prompt: motionPrompt,
           reference_note: form.reference_bindings || `首帧绑定：${image.id}`,
           status: "candidate",
@@ -5882,7 +5948,7 @@ function StepNineSection({
           JSON.stringify(project.step_four.shots, null, 2),
         ].join("\n")
       );
-      const parsed = firstJsonObject(result.content);
+      const parsed = parseStrictJsonOutput(result.content);
       const lines = listValue(parsed.dialogue_lines)
         .flatMap((item, index): DialogueLine[] => {
           if (!item || typeof item !== "object") return [];
@@ -6383,7 +6449,7 @@ function StepElevenSection({
     try {
       const result = await generateProjectTextTask(
         project.name,
-        "S11_REVIEW_REPORT",
+        "S11_NEXT_EPISODE",
         JSON.stringify({ current_story: project.step_one, review_report: form.review_report, metrics: form.metrics, target: "next_episode_suggestions" }, null, 2)
       );
       const parsed = firstJsonObject(result.content);

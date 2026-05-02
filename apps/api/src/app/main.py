@@ -562,7 +562,7 @@ def api_generate_image(payload: ImageGenerationRequest) -> GeneratedImageRespons
 def api_generate_video(payload: VideoGenerationRequest) -> GeneratedVideoResponse:
     duration = min(max(payload.duration_seconds, 1), 10)
     try:
-        result = create_minimax_video(payload.prompt, payload.source_image_url, duration)
+        result = create_minimax_video(payload.prompt, payload.source_image_url, duration, payload.shot_label)
     except AIServiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     metadata = f"{payload.shot_label or '未命名镜头'}；MiniMax 已提交任务；task_id={result['task_id']}"
