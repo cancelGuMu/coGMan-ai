@@ -327,3 +327,15 @@
   - 已通过 `apps/api/.venv/Scripts/python.exe -m pytest`（26 passed）、`npm --workspace apps/web run build` 和 `git diff --check`。
   - 未完成发布级门禁：本轮未实际消耗文本模型/图片模型额度做真实批量生成耗时对比；GitHub push 仍受当前网络连接限制影响。
 - 发布建议一句话：本轮将文档处理从反复输入整份文本推进为稳定的目标切片工作流，并通过受控并发降低文本与图片批量生成等待时间。
+
+## 2026-05-03 S06 重绘前端重复上下文修复复审
+
+- 审核结论：通过
+- 问题列表：
+  - 已定位用户再次遇到 `AI context exceeds budget: 72445 chars` 的原因：S06「AI改词并重绘」前端仍把导演规则、完整 shot、image 摘要和 step_five_prompt 拼入 `prompt`，后端虽然已按 target_id 切片，但这段大 prompt 会作为 `user_edits` 进入上下文。
+  - 已将 S06 前端调用改为只发送目标图片 ID、目标镜头 ID、用户修改意见和极短任务边界；当前图片、镜头、提示词、同镜头候选图和风格规则全部由后端网关按 `target_id` 读取。
+  - 已在后端增加任务级 `user_edits` 限额：S05/S06/S08 保留 2000 字，S04 保留 4000 字，防止旧前端或异常入口再次把完整上下文塞入用户编辑区。
+  - 已新增专项测试复现旧前端大 payload，确认 S06 仍会被裁剪到 60000 字以内，且不包含 `data:image`。
+  - 已用本地真实项目「七日祭」复测同一目标图：`prompt_chars=14991`、`context_chars=12594`、`user_edits_chars=157`，上下文键为 `target_image_or_shot/target_shot/target_prompt/related_image_candidates/style_and_rules`。
+  - 已通过 `npm --workspace apps/web run build`、`apps/api/.venv/Scripts/python.exe -m pytest`（27 passed）和 `git diff --check`。
+- 发布建议一句话：本轮彻底移除 S06 前端重复上下文，并增加后端兜底裁剪，可覆盖当前 72445 chars 超限报错。

@@ -300,6 +300,53 @@ def test_repaint_context_stays_within_budget_with_large_image_candidates() -> No
     assert "front-facing document" in bundle.prompt
 
 
+def test_repaint_context_clips_legacy_frontend_prompt_payload() -> None:
+    project = ProjectRecord(
+        id="p-repaint-legacy-payload",
+        name="legacy repaint payload project",
+        created_at="2026-05-03T00:00:00",
+        updated_at="2026-05-03T00:00:00",
+        step_four=StepFourData(
+            shots=[ShotItem(id="shot-legacy", episode_number=1, shot_number=5, scene="Archive", characters=["Shen Mo"], props=["Notebook"], purpose="read clue")]
+        ),
+        step_six=StepSixData(
+            candidates=[
+                ImageCandidate(
+                    id="img-legacy",
+                    shot_id="shot-legacy",
+                    shot_label="E1#5",
+                    url="data:image/png;base64," + ("A" * 250_000),
+                    prompt="Original prompt. " * 500,
+                )
+            ]
+        ),
+    )
+    legacy_frontend_prompt = json.dumps(
+        {
+            "director_grammar": "导演镜头语言规则：" * 200,
+            "shot": {"id": "shot-legacy", "verbose": "shot payload " * 2000},
+            "image": {"id": "img-legacy", "original_prompt": "image prompt " * 3000},
+            "step_five_prompt": {"t2i_prompt": "t2i prompt " * 3000},
+            "user_revision_instruction": "页面朝向角色，改为肩后视角",
+        },
+        ensure_ascii=False,
+    )
+
+    bundle = build_task_context_prompt(
+        get_prompt_task("S06_REPAINT_PROMPT", "generic"),
+        project,
+        user_prompt=legacy_frontend_prompt,
+        target_type="image",
+        target_id="img-legacy",
+    )
+
+    assert len(bundle.prompt) < 60_000
+    assert bundle.diagnostics["context_chars"] < 60_000
+    assert "data:image" not in bundle.prompt
+    assert len(bundle.context["user_edits"]) <= 2_100
+    assert "target_prompt" in bundle.prompt
+
+
 def test_storyboard_and_prompt_context_use_target_slices() -> None:
     project = ProjectRecord(
         id="p-sliced-context",

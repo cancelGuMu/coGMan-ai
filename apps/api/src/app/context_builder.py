@@ -151,6 +151,7 @@ def build_task_context_prompt(
 ) -> AiContextBundle:
     target = find_target_object(project, target_type, target_id)
     relevant_context = _relevant_context_for_task(task.task_id, project, target, target_type)
+    user_edit_limit = _user_edit_limit_for_task(task.task_id)
     context = {
         "task_id": task.task_id,
         "step_id": task.step_id,
@@ -160,10 +161,18 @@ def build_task_context_prompt(
         "locked_facts": _locked_facts(project),
         "target_object": sanitize_for_ai(target or {}),
         "relevant_context": relevant_context,
-        "user_edits": clip_text(sanitize_for_ai(user_prompt), MAX_USER_EDIT_CHARS),
+        "user_edits": clip_text(sanitize_for_ai(user_prompt), user_edit_limit),
         "context_policy": _policy(),
     }
     return _finalize_bundle(task, context)
+
+
+def _user_edit_limit_for_task(task_id: str) -> int:
+    if task_id.startswith("S05_") or task_id.startswith("S06_") or task_id.startswith("S08_"):
+        return 2_000
+    if task_id.startswith("S04_"):
+        return 4_000
+    return MAX_USER_EDIT_CHARS
 
 
 def validate_ai_output(task_id: str, content: str) -> dict[str, Any]:

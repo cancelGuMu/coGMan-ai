@@ -5752,8 +5752,6 @@ function StepSixSection({
     if (imageGenerationAction) return;
     const image = form.candidates.find((item) => item.id === imageId);
     if (!image) return;
-    const promptRecord = project.step_five.prompts.find((item) => item.shot_id === image.shot_id);
-    const shot = project.step_four.shots.find((item) => item.id === image.shot_id);
     const userInstruction = (image.repaint_instruction || form.repaint_prompt || form.repaint_mask_note).trim();
     if (!userInstruction) {
       setStatusMessage("请先在该候选图下填写修改意见，再执行 AI 改词并重绘。");
@@ -5764,33 +5762,17 @@ function StepSixSection({
     setStatusMessage("AI 正在按修改意见修订完整生图提示词...");
     updateRepaintFeedback(imageId, "progress", "AI 正在按你的修改意见重写完整生图提示词...");
     try {
-      const compactImageContext = {
-        id: image.id,
-        shot_id: image.shot_id,
-        shot_label: image.shot_label,
-        status: image.status,
-        metadata: image.metadata,
-        original_prompt: limitTextForAi(image.prompt, 6000),
-        previous_repaint_prompt: limitTextForAi(image.repaint_prompt, 3000),
-        user_revision_instruction: userInstruction,
-        omitted_fields: "image.url/base64 is intentionally omitted to keep the AI context within budget.",
-      };
       const result = await generateProjectTextTask(
         project.name,
         "S06_REPAINT_PROMPT",
         [
-          directorGrammarGuide,
-          "用户修改意见必须先转化为完整、可直接提交给 gpt-image-2 的英文 T2I 提示词，再进行画面重绘。",
-          "不要只输出局部短语；请保留原镜头角色、场景、服装、风格、镜头语言和连续性，仅修复用户指出的问题。",
-          "若用户指出角色视线/道具朝向/画面结构割裂，必须显式加入 over-the-shoulder view、POV from the character、page angled toward the character、not front-facing to viewer 等约束，并在 negative_prompt 排除 front-facing document to viewer、display board composition、prop presented to audience、contradictory eyeline。",
-          JSON.stringify({
-            shot,
-            image: compactImageContext,
-            step_five_prompt: promptRecord,
-            user_revision_instruction: userInstruction,
-            repaint_mask_note: form.repaint_mask_note,
-          }, null, 2),
-        ].join("\n"),
+          `目标图片 ID：${image.id}`,
+          `目标镜头 ID：${image.shot_id}`,
+          `用户修改意见：${userInstruction}`,
+          form.repaint_mask_note ? `结构/局部问题补充：${form.repaint_mask_note}` : "",
+          "请只使用后端根据 target_id 提供的当前图片、当前镜头、当前提示词、同镜头候选图和风格规则，生成完整英文 T2I 重绘提示词。",
+          "不要复述完整项目文档，不要输出解释，只返回任务契约要求的 JSON。",
+        ].filter(Boolean).join("\n"),
         { projectId: project.id, targetType: "image", targetId: image.id }
       );
       const parsed = parseStrictJsonOutput(result.content);
