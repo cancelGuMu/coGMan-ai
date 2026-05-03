@@ -113,6 +113,24 @@ def build_video_generation_prompt(prompt: str, shot_label: str = "") -> str:
     return f"{VIDEO_GENERATION_CONSTRAINTS}\n\n目标位置：step_eight.clips。\n镜头标签：{label}\n\n用户/上游提示词：\n{prompt.strip()}"
 
 
+def _clip_video_prompt_for_minimax(prompt: str, shot_label: str = "") -> str:
+    full_prompt = build_video_generation_prompt(prompt, shot_label).strip()
+    if len(full_prompt) <= 2_000:
+        return full_prompt
+    prefix = (
+        "coMGan-ai video constraints: preserve the provided first frame, character identity, "
+        "scene, props, shot intent, camera movement, no subtitles, no watermark, no new plot.\n"
+    )
+    remaining = max(200, 2_000 - len(prefix))
+    return f"{prefix}{prompt.strip()[:remaining]}".strip()
+
+
+def _is_minimax_supported_image(value: str | None) -> bool:
+    if not value:
+        return False
+    return value.startswith(("http://", "https://", "data:image/"))
+
+
 def load_env_files() -> None:
     roots = [
         Path(__file__).resolve().parents[2],
@@ -260,11 +278,11 @@ def create_minimax_video(prompt: str, first_frame_image: str | None = None, dura
     model = _env("MINIMAX_VIDEO_MODEL", "MiniMax-Hailuo-2.3")
     payload: dict[str, Any] = {
         "model": model,
-        "prompt": build_video_generation_prompt(prompt, shot_label),
+        "prompt": _clip_video_prompt_for_minimax(prompt, shot_label),
         "duration": duration,
         "resolution": _env("MINIMAX_VIDEO_RESOLUTION", "1080P"),
     }
-    if first_frame_image and first_frame_image.startswith(("http://", "https://")):
+    if _is_minimax_supported_image(first_frame_image):
         payload["first_frame_image"] = first_frame_image
 
     data = _post_json(

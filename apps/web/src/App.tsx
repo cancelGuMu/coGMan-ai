@@ -6169,7 +6169,7 @@ function StepEightSection({
           prompt: [motionPrompt, negativePrompt ? `负面限制：${negativePrompt}` : ""].filter(Boolean).join("\n"),
           shot_id: image.shot_id,
           shot_label: image.shot_label,
-          source_image_url: image.url.startsWith("http") ? image.url : null,
+          source_image_url: image.url || null,
           duration_seconds: Math.max(1, Math.round(numberValue(taskPayload.duration_seconds, duration))),
         });
         clips.push({
@@ -6216,7 +6216,7 @@ function StepEightSection({
         prompt: `${clip.motion_prompt}\n重生成策略：${clip.regeneration_strategy || "保持首帧一致，修复失败原因。"}\n失败原因：${clip.fail_reason || "未填写"}`,
         shot_id: clip.shot_id,
         shot_label: clip.shot_label,
-        source_image_url: sourceImage?.url?.startsWith("http") ? sourceImage.url : null,
+        source_image_url: sourceImage?.url || null,
         duration_seconds: clip.duration_seconds,
       });
       const next: VideoClipItem = {

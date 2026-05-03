@@ -739,3 +739,23 @@ def test_video_generation_prompt_contains_hard_constraints(monkeypatch) -> None:
     assert "镜头标签：第1集 #1" in prompt
     assert "严格继承输入首帧" in prompt
     assert captured["payload"]["first_frame_image"] == "https://example.test/first.png"
+
+
+def test_minimax_video_accepts_data_url_first_frame_and_clips_prompt(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setenv("MINIMAX_API_KEY", "test-key")
+
+    def fake_post(url: str, payload: dict[str, Any], headers: dict[str, str], timeout: int = 120) -> dict[str, Any]:
+        captured.update({"url": url, "payload": payload, "headers": headers, "timeout": timeout})
+        return {"task_id": "video-task-2"}
+
+    monkeypatch.setattr(ai_services, "_post_json", fake_post)
+    first_frame = "data:image/png;base64," + ("A" * 128)
+
+    result = ai_services.create_minimax_video("slow dolly move, preserve first frame. " * 200, first_frame, 6, "E1#1")
+
+    assert result["task_id"] == "video-task-2"
+    assert captured["url"] == "https://api.minimax.io/v1/video_generation"
+    assert captured["headers"]["Authorization"] == "Bearer test-key"
+    assert captured["payload"]["first_frame_image"] == first_frame
+    assert len(captured["payload"]["prompt"]) <= 2_000
