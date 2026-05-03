@@ -312,3 +312,18 @@
   - 已通过 `apps/api/.venv/Scripts/python.exe -m pytest`（25 passed）、`npm --workspace apps/web run build`、`git diff --check`。
   - 未完成发布级门禁：本轮未实际消耗 `gpt-image-2` 额度生成真实重绘图；浏览器可视化链路仍需在可用浏览器环境中补测。
 - 发布建议一句话：本轮从后端网关根因修复 S06 重绘上下文预算问题，可覆盖用户当前的 73434 chars 超限报错。
+
+## 2026-05-03 文档切片工作流与生成速度优化复审
+
+- 审核结论：通过
+- 问题列表：
+  - 已将后端上下文网关从“按步骤读取较宽摘要”进一步优化为“按任务 ID + 目标 ID 读取局部切片”：`episode` 目标可直接定位分集，`S04_STORYBOARD_SPLIT` 只读取目标集、目标集剧本摘录、故事摘要和资产摘要。
+  - 已将 `S05_T2I_PROMPT/S05_I2V_PROMPT` 从整批镜头与整批提示词摘要，收窄为当前目标镜头、邻近镜头、匹配资产、风格规则和当前镜头已有提示词，避免为单镜提词反复处理整份文档。
+  - 已新增按集号边界截取剧本的逻辑，优先截取 `第N集/Episode N` 到下一集标记之间的内容，避免目标集上下文把下一集文本带入。
+  - 已去掉前端步骤四/五调用里手动拼入完整剧本和完整资产库的重复 prompt，让后端 AI_CONTEXT_GATEWAY 作为唯一结构化上下文入口。
+  - 已将步骤五批量提示词生成改为 2 路受控并发，将步骤六批量图片生成改为 3 路受控并发，单镜生成仍保持 1 路，兼顾速度和上游稳定性。
+  - 已新增专项测试覆盖 S04/S05 目标切片，确认分镜上下文包含 `target_episode/script_or_novel_excerpt`，提示词上下文包含 `neighbor_shots/existing_prompt_for_shot`，且不再暴露整批 `shots`。
+  - 已用本地真实项目「七日祭」复测：`S04_STORYBOARD_SPLIT` 网关 prompt 约 20298 chars，`S05_T2I_PROMPT` 网关 prompt 约 16650 chars，均为目标切片结构。
+  - 已通过 `apps/api/.venv/Scripts/python.exe -m pytest`（26 passed）、`npm --workspace apps/web run build` 和 `git diff --check`。
+  - 未完成发布级门禁：本轮未实际消耗文本模型/图片模型额度做真实批量生成耗时对比；GitHub push 仍受当前网络连接限制影响。
+- 发布建议一句话：本轮将文档处理从反复输入整份文本推进为稳定的目标切片工作流，并通过受控并发降低文本与图片批量生成等待时间。

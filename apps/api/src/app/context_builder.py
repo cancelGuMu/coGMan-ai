@@ -224,6 +224,11 @@ def find_target_object(project: ProjectRecord, target_type: str | None, target_i
     normalized_id = (target_id or "").strip()
     if not normalized_id and normalized_type not in {"story", "script", "assets"}:
         return {}
+    if normalized_type in {"episode", "episodes"}:
+        for item in project.step_one.episodes:
+            if str(item.episode_number) == normalized_id:
+                return item
+        return {}
 
     collections: dict[str, list[Any]] = {
         "character": project.step_three.characters,
@@ -374,19 +379,22 @@ def _relevant_context_for_task(task_id: str, project: ProjectRecord, target: Any
             "existing_assets": _asset_summary(project),
         }
     if task_id.startswith("S04_"):
+        episode_number = _target_episode_number(target) or project.step_four.selected_episode_number
         return {
-            "story": _step_one_summary(project, include_episodes=True),
-            "script": _step_two_summary(project, include_script=True),
+            "target_episode": _episode_summary(target),
+            "story": _step_one_summary(project, include_episodes=False),
+            "script_excerpt": _episode_script_context(project, episode_number),
             "assets": _asset_summary(project),
         }
     if task_id.startswith("S05_"):
         target_terms = _target_terms(target)
+        target_shot_id = _target_shot_id(target)
         return {
-            "target_shot": sanitize_for_ai(target),
-            "shots": _shots_summary(project, limit=20),
+            "target_shot": _single_shot_summary(project, target_shot_id) or sanitize_for_ai(target),
+            "neighbor_shots": _neighbor_shots_summary(project, target_shot_id, radius=2),
             "matched_assets": _matched_assets(project, target_terms),
             "style_and_rules": _style_rules(project),
-            "prompt_workspace": _prompts_summary(project, limit=20),
+            "existing_prompt_for_shot": _single_prompt_summary(project, target_shot_id),
         }
     if task_id.startswith("S06_"):
         target_shot_id = _target_shot_id(target)
@@ -523,6 +531,61 @@ def _step_two_summary(project: ProjectRecord, include_script: bool) -> dict[str,
             }
         )
     return summary
+
+
+def _episode_summary(target: Any) -> dict[str, Any]:
+    target = sanitize_for_ai(target)
+    if not isinstance(target, dict):
+        return {}
+    return {
+        "episode_number": target.get("episode_number"),
+        "title": clip_text(target.get("title"), 160),
+        "content": clip_text(target.get("content"), 2_000),
+        "hook": clip_text(target.get("hook"), 600),
+    }
+
+
+def _target_episode_number(target: Any) -> int:
+    target = sanitize_for_ai(target)
+    if not isinstance(target, dict):
+        return 0
+    raw = target.get("episode_number") or target.get("id")
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _episode_script_context(project: ProjectRecord, episode_number: int) -> dict[str, str]:
+    step = project.step_two
+    source = step.script_text or step.novel_text or step.source_material
+    excerpt = _episode_segment_excerpt(source, episode_number, 12_000)
+    return {
+        "selected_episode_number": episode_number,
+        "current_episode_context": clip_text(step.current_episode_context, 1_500),
+        "script_or_novel_excerpt": excerpt,
+        "character_profiles": clip_text(step.character_profiles, 2_500),
+        "terminology_library": clip_text(step.terminology_library, 2_000),
+        "writing_guidance": clip_text(step.writing_guidance, 1_500),
+    }
+
+
+def _episode_segment_excerpt(text: str, episode_number: int, limit: int) -> str:
+    normalized = _clean_text(text)
+    if not normalized:
+        return ""
+    if episode_number <= 0:
+        return clip_text(normalized, min(limit, 8_000))
+    marker_re = re.compile(rf"(?:^|\n)\s*(?:第\s*{episode_number}\s*集|Episode\s*{episode_number}\b)", re.IGNORECASE)
+    next_marker_re = re.compile(rf"\n\s*(?:第\s*{episode_number + 1}\s*集|Episode\s*{episode_number + 1}\b)", re.IGNORECASE)
+    start_match = marker_re.search(normalized)
+    if start_match:
+        start = start_match.start()
+        next_match = next_marker_re.search(normalized, start_match.end())
+        end = next_match.start() if next_match else len(normalized)
+        return clip_text(normalized[start:end], limit)
+    terms = [f"第 {episode_number} 集", f"第{episode_number}集", f"Episode {episode_number}"]
+    return _excerpt_for_terms(normalized, terms, limit)
 
 
 def _asset_summary(project: ProjectRecord) -> dict[str, Any]:
@@ -692,6 +755,33 @@ def _single_shot_summary(project: ProjectRecord, shot_id: str) -> dict[str, Any]
             "generation_notes": clip_text(item.generation_notes, 600),
         }
     return {}
+
+
+def _neighbor_shots_summary(project: ProjectRecord, shot_id: str, radius: int = 2) -> list[dict[str, Any]]:
+    shots = project.step_four.shots
+    index = next((idx for idx, item in enumerate(shots) if item.id == shot_id), -1)
+    if index < 0:
+        return []
+    start = max(0, index - radius)
+    end = min(len(shots), index + radius + 1)
+    return [
+        {
+            "id": item.id,
+            "episode_number": item.episode_number,
+            "shot_number": item.shot_number,
+            "scene": clip_text(item.scene, 160),
+            "characters": [clip_text(name, 100) for name in item.characters],
+            "props": [clip_text(name, 100) for name in item.props],
+            "purpose": clip_text(item.purpose, 300),
+            "visual_description": clip_text(item.visual_description, 400),
+            "action": clip_text(item.action, 300),
+            "shot_size": clip_text(item.shot_size, 100),
+            "camera_angle": clip_text(item.camera_angle, 100),
+            "composition": clip_text(item.composition, 240),
+            "continuity_notes": clip_text(item.continuity_notes, 240),
+        }
+        for item in shots[start:end]
+    ]
 
 
 def _single_prompt_summary(project: ProjectRecord, shot_id: str) -> dict[str, Any]:

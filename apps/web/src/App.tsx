@@ -274,6 +274,24 @@ function limitTextForAi(value: unknown, maxLength = 12000): string {
   return `${text.slice(0, maxLength)}\n...[??? ${text.length - maxLength} ?????? AI ?????]`;
 }
 
+async function runLimitedConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R | null | undefined>
+): Promise<R[]> {
+  const results: Array<R | null | undefined> = new Array(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(Math.max(1, limit), items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    }
+  });
+  await Promise.all(workers);
+  return results.filter((item): item is R => item != null);
+}
+
 function summarizeAssetLibraryForAi(library: StepThreeData) {
   return {
     candidates: library.candidates.map((item) => ({
@@ -5276,10 +5294,7 @@ function StepFourSection({
           `结尾钩子：${episode?.hook || "未填写"}`,
           "分镜要求：每个镜头都必须是产品级生产表，包含剧情目的、故事节拍、画面描述、动作、走位调度、景别、机位、构图、镜头焦段或运动、声音/对白、转场/连续性、资产绑定、生成硬约束和风险点。",
           directorGrammarGuide,
-          "剧本：",
-          project.step_two.script_text || project.step_two.novel_text || "未填写",
-          "资产库：",
-          JSON.stringify(project.step_three, null, 2),
+          "请只基于当前目标集、该集剧本摘录和资产摘要拆分镜头，不要重新处理整份原始文档。",
         ].join("\n"),
         { projectId: project.id, targetType: "episode", targetId: String(episode?.episode_number ?? form.selected_episode_number) }
       );
@@ -5494,18 +5509,16 @@ function StepFiveSection({
     }
     setStatusMessage(mode === "t2i" ? "AI 正在生成图片提示词..." : "AI 正在生成视频提示词...");
     try {
-      const prompts: PromptItem[] = [];
-      for (let index = 0; index < targets.length; index += 1) {
-        const shot = targets[index];
+      const promptConcurrency = scope === "batch" ? 2 : 1;
+      const prompts = await runLimitedConcurrency(targets, promptConcurrency, async (shot, index) => {
         const taskId = mode === "t2i" ? "S05_T2I_PROMPT" : "S05_I2V_PROMPT";
         const basePrompt = [
-            "镜头：",
-            JSON.stringify(shot, null, 2),
-            "资产与一致性规则：",
-            JSON.stringify(project.step_three, null, 2),
+            `目标镜头 ID：${shot.id}`,
+            `目标镜头标签：第${shot.episode_number}集 #${shot.shot_number}`,
             "语言约束：用于图片/视频模型的提示词字段必须统一使用英文，包括正向提示词、负面词、参数和锁定词；不得中英混写。中文角色名、场景名、道具名请转写为稳定英文名或拼音，并在同一项目内保持一致。UI说明类字段可继续中文。",
             "视线与道具朝向约束：如果镜头中角色正在阅读、查看、拍摄或检查笔记、报告、照片、手机、档案等信息载体，画面必须遵循角色视线逻辑。信息载体应朝向角色，镜头可使用角色肩后、侧后、主观视角或斜侧可读构图；不得让页面/屏幕像展示牌一样正面朝观众、同时角色却在旁边观看。请在正向英文提示词中加入 over-the-shoulder view / POV from the character / page angled toward the character / screen facing the character 等约束，并在负面词中排除 front-facing document to viewer / display board composition / prop presented to audience / contradictory eyeline。",
             directorGrammarGuide,
+            "请只使用后端提供的当前镜头、邻近镜头、匹配资产和风格规则，不要重新读取或复述完整项目文档。",
             `负面词模板：${form.negative_template}`,
             `参数模板：${form.parameter_template}`,
         ].join("\n");
@@ -5532,7 +5545,8 @@ function StepFiveSection({
         }
         const positivePrompt = textValue(parsed.positive_prompt) || textValue(parsed.full_prompt);
         const motionPrompt = textValue(parsed.full_prompt) || textValue(parsed.motion_prompt);
-        prompts.push({
+        setStatusMessage(`提示词生成进度：${index + 1}/${targets.length}`);
+        return {
           id: `prompt-${shot.id}-${mode}-${Date.now()}-${index}`,
           shot_id: shot.id,
           shot_label: `第${shot.episode_number}集 #${shot.shot_number}`,
@@ -5543,8 +5557,8 @@ function StepFiveSection({
           parameters: textValue(parsed.parameters, form.parameter_template),
           locked_terms: textValue(parsed.locked_terms, project.step_three.consistency_rules),
           version: "v1",
-        });
-      }
+        };
+      });
       setForm((current) => ({ ...current, prompts: [...current.prompts, ...prompts] }));
       setStatusMessage(`AI 已生成 ${prompts.length} 条${mode.toUpperCase()}提示词。`);
     } catch (err) {
@@ -5659,21 +5673,21 @@ function StepSixSection({
       return;
     }
     setImageGenerationAction(scope);
-    setStatusMessage(`正在调用 gpt-image-2 生成 ${targets.length} 张图片...`);
+    const concurrency = scope === "batch" ? 3 : 1;
+    setStatusMessage(`正在调用 gpt-image-2 生成 ${targets.length} 张图片，并发 ${concurrency} 路...`);
     try {
-      const candidates: ImageCandidate[] = [];
-      for (let index = 0; index < targets.length; index += 1) {
-        const prompt = targets[index];
+      const candidates = await runLimitedConcurrency(targets, concurrency, async (prompt, index) => {
         const promptText = prompt.t2i_prompt || prompt.i2v_prompt;
         if (!promptText.trim()) {
-          continue;
+          return null;
         }
         const result = await generateImageCandidate({
           prompt: promptText,
           shot_id: prompt.shot_id,
           shot_label: prompt.shot_label,
         });
-        candidates.push({
+        setStatusMessage(`图片生成进度：${index + 1}/${targets.length}`);
+        return {
           id: `img-${prompt.id}-${Date.now()}-${index}`,
           shot_id: prompt.shot_id,
           shot_label: prompt.shot_label,
@@ -5683,8 +5697,8 @@ function StepSixSection({
           metadata: `${result.provider} / ${result.model}；${result.metadata || prompt.parameters}`,
           repaint_instruction: "",
           repaint_prompt: "",
-        });
-      }
+        };
+      });
       if (!candidates.length) {
         setStatusMessage("没有可用于生图的提示词。");
         return;

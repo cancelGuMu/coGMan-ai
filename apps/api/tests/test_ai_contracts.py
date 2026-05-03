@@ -7,7 +7,20 @@ from fastapi.testclient import TestClient
 from app import ai_services
 from app.context_builder import build_task_context_prompt, validate_ai_output
 from app.main import app
-from app.models import AssetScene, ImageCandidate, ProjectRecord, ShotItem, StepFourData, StepSixData, StepThreeData, StepTwoData
+from app.models import (
+    AssetCharacter,
+    AssetProp,
+    AssetScene,
+    EpisodeDraft,
+    ImageCandidate,
+    ProjectRecord,
+    ShotItem,
+    StepFourData,
+    StepOneData,
+    StepSixData,
+    StepThreeData,
+    StepTwoData,
+)
 from app.prompt_registry import PROMPT_TASKS, build_text_messages, get_prompt_task, validate_prompt_registry
 
 
@@ -285,6 +298,65 @@ def test_repaint_context_stays_within_budget_with_large_image_candidates() -> No
     assert "url" not in bundle.prompt
     assert "related_image_candidates" in bundle.prompt
     assert "front-facing document" in bundle.prompt
+
+
+def test_storyboard_and_prompt_context_use_target_slices() -> None:
+    project = ProjectRecord(
+        id="p-sliced-context",
+        name="sliced context project",
+        created_at="2026-05-03T00:00:00",
+        updated_at="2026-05-03T00:00:00",
+        step_one=StepOneData(
+            episodes=[
+                EpisodeDraft(episode_number=1, title="Episode One", content="First episode archive discovery.", hook="Notebook warning."),
+                EpisodeDraft(episode_number=2, title="Episode Two", content="Second episode clock tower.", hook="Red tea."),
+            ]
+        ),
+        step_two=StepTwoData(
+            script_text=("第1集 沈默进入档案馆，发现黑皮笔记本。\n" * 200)
+            + ("第2集 沈默进入钟楼，遇到红茶。\n" * 200),
+            character_profiles="Shen Mo: skeptical investigator.",
+            terminology_library="Seven Day Ritual: time loop.",
+            writing_guidance="Keep suspense tight.",
+        ),
+        step_three=StepThreeData(
+            characters=[AssetCharacter(id="char-1", name="沈默", role="protagonist")],
+            scenes=[AssetScene(id="scene-1", name="档案馆", location="basement")],
+            props=[AssetProp(id="prop-1", name="黑皮笔记本", story_function="warning carrier")],
+            style_board="cold archive thriller",
+            consistency_rules="keep Shen Mo consistent",
+        ),
+        step_four=StepFourData(
+            selected_episode_number=1,
+            shots=[
+                ShotItem(id=f"shot-{index}", episode_number=1, shot_number=index, scene="档案馆", characters=["沈默"], props=["黑皮笔记本"], purpose="reveal clue")
+                for index in range(1, 8)
+            ],
+        ),
+    )
+
+    storyboard_bundle = build_task_context_prompt(
+        get_prompt_task("S04_STORYBOARD_SPLIT", "generic"),
+        project,
+        user_prompt="Split only the selected episode.",
+        target_type="episode",
+        target_id="1",
+    )
+    prompt_bundle = build_task_context_prompt(
+        get_prompt_task("S05_T2I_PROMPT", "generic"),
+        project,
+        user_prompt="Generate T2I prompt for current shot.",
+        target_type="shot",
+        target_id="shot-4",
+    )
+
+    assert "target_episode" in storyboard_bundle.prompt
+    assert "script_or_novel_excerpt" in storyboard_bundle.prompt
+    assert "第2集 沈默进入钟楼" not in storyboard_bundle.prompt
+    assert "neighbor_shots" in prompt_bundle.prompt
+    assert "existing_prompt_for_shot" in prompt_bundle.prompt
+    assert '"shots"' not in prompt_bundle.prompt
+    assert len(prompt_bundle.prompt) < 60_000
 
 
 def test_validate_ai_output_rejects_contract_mismatch() -> None:
