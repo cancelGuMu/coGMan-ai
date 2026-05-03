@@ -228,6 +228,65 @@ def test_generate_text_task_with_project_id_sends_minimized_context(monkeypatch)
     assert "has_image" in captured["prompt"]
 
 
+def test_repaint_context_stays_within_budget_with_large_image_candidates() -> None:
+    project = ProjectRecord(
+        id="p-repaint-budget",
+        name="repaint budget project",
+        created_at="2026-05-03T00:00:00",
+        updated_at="2026-05-03T00:00:00",
+        step_four=StepFourData(
+            shots=[
+                ShotItem(
+                    id="shot-repaint",
+                    episode_number=1,
+                    shot_number=5,
+                    scene="Archive basement",
+                    characters=["Shen Mo"],
+                    props=["black notebook"],
+                    purpose="Shen Mo reads the warning and dismisses it as a prank.",
+                    story_beat="He relaxes before the later reversal.",
+                    visual_description="Notebook foreground, character reaction on the side.",
+                    action="Shen Mo reads, then smirks.",
+                    blocking="Notebook should face the character, not the audience.",
+                    shot_size="close-up to medium close-up",
+                    camera_angle="eye level",
+                    composition="over-the-shoulder reading composition",
+                    generation_notes="avoid front-facing document display",
+                )
+            ]
+        ),
+        step_six=StepSixData(
+            candidates=[
+                ImageCandidate(
+                    id=f"img-repaint-{index}",
+                    shot_id="shot-repaint",
+                    shot_label=f"E1#{index}",
+                    url="data:image/png;base64," + ("A" * 250_000),
+                    prompt="Over-the-shoulder archive image prompt. " * 300,
+                    repaint_instruction="The notebook page must face Shen Mo, not the audience.",
+                    repaint_prompt="Previous repaint prompt. " * 300,
+                )
+                for index in range(12)
+            ]
+        ),
+    )
+
+    bundle = build_task_context_prompt(
+        get_prompt_task("S06_REPAINT_PROMPT", "generic"),
+        project,
+        user_prompt="Fix the composition so the notebook is seen by the character, not presented to the viewer.",
+        target_type="image",
+        target_id="img-repaint-0",
+    )
+
+    assert bundle.prompt.startswith("AI_CONTEXT_GATEWAY_V1")
+    assert len(bundle.prompt) < 60_000
+    assert "data:image" not in bundle.prompt
+    assert "url" not in bundle.prompt
+    assert "related_image_candidates" in bundle.prompt
+    assert "front-facing document" in bundle.prompt
+
+
 def test_validate_ai_output_rejects_contract_mismatch() -> None:
     try:
         validate_ai_output("S03_SCENE_CARDS", json.dumps({"characters": []}, ensure_ascii=False))

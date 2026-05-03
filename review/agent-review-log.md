@@ -299,3 +299,16 @@
   - 已通过 `npm --workspace apps/web run build`、`apps/api/.venv/Scripts/python.exe -m pytest` 和 `git diff --check`。
   - 未完成发布级门禁：本轮未实际消耗 `gpt-image-2` 额度生成真实重绘图；浏览器可视化链路仍需在可用浏览器环境中补测。
 - 发布建议一句话：本轮修复可解决重绘改词上下文超限和无可见反馈问题，可随画面重绘闭环一起发布。
+
+## 2026-05-03 画面重绘后端上下文预算二次修复复审
+
+- 审核结论：通过
+- 问题列表：
+  - 已复查用户继续遇到上下文超限的原因：前端虽已省略 `image.url/base64`，但后端 `GenerationRequest` 会按 `project_id + target_id` 自动构造 AI 网关上下文，并从已保存项目中再次读取目标候选图、镜头、提示词和候选图列表。
+  - 已修复后端上下文网关的顺序问题：此前 `_finalize_bundle` 在压缩前先执行 `validate_context`，raw context 超过 60000 字符会直接抛错，导致后续压缩逻辑没有机会执行；现在改为先清理媒体与密钥、先压缩 `target_object/relevant_context/user_edits`，再做严格预算校验。
+  - 已将 `S06_REPAINT_PROMPT` 相关上下文从“20 个镜头 + 20 个提示词 + 20 张候选图”收窄为“当前目标图片 + 当前目标镜头 + 当前目标提示词 + 同镜头相关候选图”，更符合单张重绘任务。
+  - 已新增专项测试，模拟 12 张含超长 base64 URL 与长提示词的候选图，确认 `S06_REPAINT_PROMPT` 生成的网关 prompt 小于 60000 且不包含 `data:image`、`url`、`;base64`。
+  - 已用本地真实项目「七日祭」的 `img-reg-S01E01_SHOT_05-1777771174680` 复测，最终 `prompt_chars=14886`、`context_chars=12489`，上下文键为 `target_image_or_shot/target_shot/target_prompt/related_image_candidates/style_and_rules`，不再包含媒体 payload。
+  - 已通过 `apps/api/.venv/Scripts/python.exe -m pytest`（25 passed）、`npm --workspace apps/web run build`、`git diff --check`。
+  - 未完成发布级门禁：本轮未实际消耗 `gpt-image-2` 额度生成真实重绘图；浏览器可视化链路仍需在可用浏览器环境中补测。
+- 发布建议一句话：本轮从后端网关根因修复 S06 重绘上下文预算问题，可覆盖用户当前的 73434 chars 超限报错。

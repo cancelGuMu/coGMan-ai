@@ -258,14 +258,15 @@ def find_target_object(project: ProjectRecord, target_type: str | None, target_i
 
 def _finalize_bundle(task: PromptTask, context: dict[str, Any]) -> AiContextBundle:
     context = sanitize_for_ai(context)
+    context = _compact_context_to_budget(context)
     diagnostics = validate_context(context)
     prompt = _render_prompt(task, context, diagnostics)
     prompt = _sanitize_string(prompt)
     if len(prompt) > MAX_CONTEXT_CHARS:
-        context["user_edits"] = clip_text(context.get("user_edits", ""), 3_000)
-        context["relevant_context"] = _clip_nested_text(context.get("relevant_context", {}), 6_000)
+        context = _compact_context_to_budget(context, aggressive=True)
         diagnostics = validate_context(context)
         prompt = _render_prompt(task, context, diagnostics)
+        prompt = _sanitize_string(prompt)
     if len(prompt) > MAX_CONTEXT_CHARS:
         raise ContextValidationError(f"AI context is still too large after compaction: {len(prompt)} chars")
     return AiContextBundle(
@@ -300,6 +301,28 @@ def validate_context(context: dict[str, Any]) -> dict[str, Any]:
         "forbidden_payloads": [],
         "required_sections": sorted(required),
     }
+
+
+def _compact_context_to_budget(context: dict[str, Any], aggressive: bool = False) -> dict[str, Any]:
+    compacted = {
+        **context,
+        "target_object": _clip_nested_text(context.get("target_object", {}), 4_000 if not aggressive else 2_000),
+        "relevant_context": _clip_nested_text(context.get("relevant_context", {}), 24_000 if not aggressive else 8_000),
+        "user_edits": clip_text(context.get("user_edits", ""), 6_000 if not aggressive else 2_500),
+    }
+    raw = json.dumps(compacted, ensure_ascii=False, sort_keys=True)
+    if len(raw) <= MAX_CONTEXT_CHARS:
+        return compacted
+    compacted["relevant_context"] = _clip_nested_text(compacted.get("relevant_context", {}), 12_000)
+    compacted["target_object"] = _clip_nested_text(compacted.get("target_object", {}), 2_500)
+    compacted["user_edits"] = clip_text(compacted.get("user_edits", ""), 3_000)
+    raw = json.dumps(compacted, ensure_ascii=False, sort_keys=True)
+    if len(raw) <= MAX_CONTEXT_CHARS:
+        return compacted
+    compacted["relevant_context"] = _clip_nested_text(compacted.get("relevant_context", {}), 6_000)
+    compacted["target_object"] = _clip_nested_text(compacted.get("target_object", {}), 1_500)
+    compacted["user_edits"] = clip_text(compacted.get("user_edits", ""), 2_000)
+    return compacted
 
 
 def _render_prompt(task: PromptTask, context: dict[str, Any], diagnostics: dict[str, Any]) -> str:
@@ -366,11 +389,12 @@ def _relevant_context_for_task(task_id: str, project: ProjectRecord, target: Any
             "prompt_workspace": _prompts_summary(project, limit=20),
         }
     if task_id.startswith("S06_"):
+        target_shot_id = _target_shot_id(target)
         return {
             "target_image_or_shot": sanitize_for_ai(target),
-            "shots": _shots_summary(project, limit=20),
-            "prompts": _prompts_summary(project, limit=20),
-            "image_candidates": _images_summary(project, limit=20),
+            "target_shot": _single_shot_summary(project, target_shot_id),
+            "target_prompt": _single_prompt_summary(project, target_shot_id),
+            "related_image_candidates": _related_images_summary(project, target_shot_id, limit=6),
             "style_and_rules": _style_rules(project),
         }
     if task_id.startswith("S07_"):
@@ -627,6 +651,84 @@ def _images_summary(project: ProjectRecord, limit: int) -> list[dict[str, Any]]:
             "has_image": bool(item.url.strip()),
         }
         for item in project.step_six.candidates[:limit]
+    ]
+
+
+def _target_shot_id(target: Any) -> str:
+    target = sanitize_for_ai(target)
+    if not isinstance(target, dict):
+        return ""
+    shot_id = target.get("shot_id") or target.get("id")
+    return str(shot_id).strip() if shot_id else ""
+
+
+def _single_shot_summary(project: ProjectRecord, shot_id: str) -> dict[str, Any]:
+    for item in project.step_four.shots:
+        if item.id != shot_id:
+            continue
+        return {
+            "id": item.id,
+            "episode_number": item.episode_number,
+            "shot_number": item.shot_number,
+            "scene": clip_text(item.scene, 200),
+            "characters": [clip_text(name, 120) for name in item.characters],
+            "props": [clip_text(name, 120) for name in item.props],
+            "purpose": clip_text(item.purpose, 500),
+            "story_beat": clip_text(item.story_beat, 400),
+            "visual_description": clip_text(item.visual_description, 700),
+            "action": clip_text(item.action, 500),
+            "blocking": clip_text(item.blocking, 500),
+            "shot_size": clip_text(item.shot_size, 120),
+            "camera_angle": clip_text(item.camera_angle, 120),
+            "composition": clip_text(item.composition, 350),
+            "lens": clip_text(item.lens, 160),
+            "movement": clip_text(item.movement, 300),
+            "camera_motion": clip_text(item.camera_motion, 300),
+            "lighting": clip_text(item.lighting, 240),
+            "color_mood": clip_text(item.color_mood, 240),
+            "dialogue": clip_text(item.dialogue, 400),
+            "continuity_notes": clip_text(item.continuity_notes, 400),
+            "asset_requirements": clip_text(item.asset_requirements, 500),
+            "generation_notes": clip_text(item.generation_notes, 600),
+        }
+    return {}
+
+
+def _single_prompt_summary(project: ProjectRecord, shot_id: str) -> dict[str, Any]:
+    for item in project.step_five.prompts:
+        if item.shot_id != shot_id:
+            continue
+        return {
+            "id": item.id,
+            "shot_id": item.shot_id,
+            "shot_label": clip_text(item.shot_label, 160),
+            "t2i_prompt": clip_text(item.t2i_prompt, 1_800),
+            "i2v_prompt": clip_text(item.i2v_prompt, 800),
+            "negative_prompt": clip_text(item.negative_prompt, 800),
+            "parameters": clip_text(item.parameters, 400),
+            "locked_terms": clip_text(item.locked_terms, 800),
+            "version": clip_text(item.version, 120),
+        }
+    return {}
+
+
+def _related_images_summary(project: ProjectRecord, shot_id: str, limit: int) -> list[dict[str, Any]]:
+    related = [item for item in project.step_six.candidates if item.shot_id == shot_id]
+    if not related:
+        related = project.step_six.candidates[:limit]
+    return [
+        {
+            "id": item.id,
+            "shot_id": item.shot_id,
+            "shot_label": clip_text(item.shot_label, 160),
+            "prompt": clip_text(item.prompt, 1_200),
+            "status": item.status,
+            "metadata": clip_text(item.metadata, 300),
+            "repaint_instruction": clip_text(item.repaint_instruction, 800),
+            "repaint_prompt": clip_text(item.repaint_prompt, 1_000),
+            "has_image": bool(item.url.strip()),
+        }
+        for item in related[:limit]
     ]
 
 
