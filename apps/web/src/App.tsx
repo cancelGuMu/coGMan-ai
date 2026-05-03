@@ -6152,18 +6152,14 @@ function StepEightSection({
           project.name,
           "S08_VIDEO_TASK",
           [
-            directorGrammarGuide,
-            "视频生成导演约束：继承分镜和 I2V 提示词里的导演意图，明确镜头运动为什么发生、如何承接角色视线、如何揭示信息、如何推进情绪；输出给视频模型的 prompt 和 negative_prompt 必须使用英文。",
-            JSON.stringify({
-              shot,
-              image,
-              i2v_prompt: promptRecord?.i2v_prompt,
-              negative_prompt: promptRecord?.negative_prompt,
-              motion_settings: form.motion_settings,
-              reference_bindings: form.reference_bindings,
-              qc_reports: project.step_seven.reports.filter((report) => report.asset_id === image.id),
-            }, null, 2),
-          ].join("\n"),
+            `目标图片 ID：${image.id}`,
+            `目标镜头 ID：${image.shot_id}`,
+            `目标图片标签：${image.shot_label}`,
+            `动作运镜参数：${limitTextForAi(form.motion_settings, 800)}`,
+            form.reference_bindings ? `参考素材绑定：${limitTextForAi(form.reference_bindings, 800)}` : "",
+            "请只使用后端根据 target_id 提供的当前图片、当前镜头、当前 I2V 提示词、质检结果和风格规则，生成完整英文视频提示词。",
+            "不要复述完整项目文档，不要输出解释，只返回任务契约要求的 JSON。",
+          ].filter(Boolean).join("\n"),
           { projectId: project.id, targetType: "image", targetId: image.id }
         );
         const taskPayload = firstJsonObject(taskResult.content);

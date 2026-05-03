@@ -14,9 +14,14 @@ from app.models import (
     EpisodeDraft,
     ImageCandidate,
     ProjectRecord,
+    PromptItem,
+    QualityReportItem,
     ShotItem,
+    StepEightData,
+    StepFiveData,
     StepFourData,
     StepOneData,
+    StepSevenData,
     StepSixData,
     StepThreeData,
     StepTwoData,
@@ -345,6 +350,118 @@ def test_repaint_context_clips_legacy_frontend_prompt_payload() -> None:
     assert "data:image" not in bundle.prompt
     assert len(bundle.context["user_edits"]) <= 2_100
     assert "target_prompt" in bundle.prompt
+
+
+def test_video_context_clips_legacy_frontend_prompt_payload() -> None:
+    project = ProjectRecord(
+        id="p-video-legacy-payload",
+        name="legacy video payload project",
+        created_at="2026-05-04T00:00:00",
+        updated_at="2026-05-04T00:00:00",
+        step_four=StepFourData(
+            shots=[
+                ShotItem(
+                    id="shot-video",
+                    episode_number=1,
+                    shot_number=1,
+                    scene="Archive basement",
+                    characters=[],
+                    props=[],
+                    purpose="Establish a cold, oppressive archive corridor.",
+                    story_beat="The scene begins with a slow pan through the archive.",
+                    visual_description="Blurred shelves in the foreground, corridor receding into darkness.",
+                    action="The camera slowly tracks and pans across the archive racks.",
+                    blocking="No character in frame; shelves create layered depth.",
+                    shot_size="wide shot to medium shot",
+                    camera_angle="eye level with slight high angle",
+                    composition="foreground shelves, midground corridor, dust in light beams",
+                    lens="wide angle",
+                    movement="slow dolly pan from right to left",
+                    camera_motion="slow dolly pan from right to left",
+                    lighting="flickering cold fluorescent practicals",
+                    color_mood="cold desaturated psychological thriller",
+                    generation_notes="no subtitles or unrelated text",
+                )
+            ]
+        ),
+        step_five=StepFiveData(
+            prompts=[
+                PromptItem(
+                    id="prompt-video",
+                    shot_id="shot-video",
+                    shot_label="E1#1",
+                    i2v_prompt="Slow dolly pan across cold underground archive shelves, motivated by spatial reveal. " * 80,
+                    negative_prompt="subtitles, watermark, warm daylight, cartoon, sudden jump cut",
+                    parameters="16:9, cinematic, first frame locked",
+                    locked_terms="Archive basement\ncold low saturation",
+                )
+            ]
+        ),
+        step_six=StepSixData(
+            candidates=[
+                ImageCandidate(
+                    id="img-video",
+                    shot_id="shot-video",
+                    shot_label="E1#1",
+                    url="data:image/png;base64," + ("A" * 250_000),
+                    prompt="Wide archive image prompt. " * 500,
+                    status="selected",
+                    metadata="AIArtMirror / gpt-image-2",
+                )
+            ]
+        ),
+        step_seven=StepSevenData(
+            reports=[
+                QualityReportItem(
+                    id="qc-video",
+                    asset_id="img-video",
+                    shot_label="E1#1",
+                    issue="The frame passes composition checks.",
+                    suggestion="Keep motion subtle and preserve the first frame.",
+                    status="passed",
+                    recheck_result="passed",
+                )
+            ]
+        ),
+        step_eight=StepEightData(
+            motion_settings="动作：自然推进；环境动态：轻微；运镜：按分镜；时长：跟随镜头。" * 40,
+            reference_bindings="首帧绑定 img-video，保持档案架和冷雾一致。" * 40,
+        ),
+    )
+    legacy_frontend_prompt = json.dumps(
+        {
+            "director_grammar": "导演镜头语言规则：" * 200,
+            "shot": {"id": "shot-video", "verbose": "shot payload " * 2000},
+            "image": {
+                "id": "img-video",
+                "url": "data:image/png;base64," + ("B" * 250_000),
+                "original_prompt": "image prompt " * 3000,
+            },
+            "i2v_prompt": "video prompt " * 3000,
+            "negative_prompt": "negative prompt " * 2000,
+            "motion_settings": "motion settings " * 2000,
+            "reference_bindings": "reference bindings " * 2000,
+            "qc_reports": [{"issue": "qc payload " * 2000}],
+        },
+        ensure_ascii=False,
+    )
+
+    bundle = build_task_context_prompt(
+        get_prompt_task("S08_VIDEO_TASK", "generic"),
+        project,
+        user_prompt=legacy_frontend_prompt,
+        target_type="image",
+        target_id="img-video",
+    )
+
+    assert len(bundle.prompt) < 60_000
+    assert bundle.diagnostics["context_chars"] < 60_000
+    assert "data:image" not in bundle.prompt
+    assert '"url"' not in bundle.prompt
+    assert len(bundle.context["user_edits"]) <= 2_100
+    assert "target_shot" in bundle.prompt
+    assert "target_prompt" in bundle.prompt
+    assert "qc_reports" in bundle.prompt
 
 
 def test_storyboard_and_prompt_context_use_target_slices() -> None:

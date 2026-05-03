@@ -339,3 +339,15 @@
   - 已用本地真实项目「七日祭」复测同一目标图：`prompt_chars=14991`、`context_chars=12594`、`user_edits_chars=157`，上下文键为 `target_image_or_shot/target_shot/target_prompt/related_image_candidates/style_and_rules`。
   - 已通过 `npm --workspace apps/web run build`、`apps/api/.venv/Scripts/python.exe -m pytest`（27 passed）和 `git diff --check`。
 - 发布建议一句话：本轮彻底移除 S06 前端重复上下文，并增加后端兜底裁剪，可覆盖当前 72445 chars 超限报错。
+
+## 2026-05-04 S08 视频生成上下文预算修复复审
+
+- 审核结论：通过
+- 问题列表：
+  - 已定位用户遇到 `AI context exceeds budget: 68925 chars` 的原因：S08 视频生成前端仍把导演规则、完整 `shot/image/i2v_prompt/qc_reports` JSON 拼入 `prompt`，其中目标图片可能携带 `image.url/base64`，导致 Pydantic 自动上下文网关在进入接口前就被撑爆。
+  - 已将步骤八前端调用改为只发送目标图片 ID、目标镜头 ID、图片标签、动作运镜参数和参考绑定摘要；当前图片、当前镜头、当前 I2V 提示词、质检结果和风格规则全部由后端按 `target_id` 获取。
+  - 已将后端 S08 上下文从“20 个镜头 + 30 张图 + 20 条提示词”收窄为“目标视频源 + 目标镜头 + 目标提示词 + 同镜头少量候选图 + 当前图片质检报告 + 风格规则 + 视频设置”，避免批量视频生成反复处理整份项目上下文。
+  - 已新增专项测试复现旧前端大 payload，包含超长 `data:image`、大体积 `shot/image/i2v/qc` 字段，确认 S08 网关 prompt 小于 60000、上下文不包含 `data:image` 和 `"url"`，且 `user_edits` 被裁剪到约 2000 字。
+  - 已用本地真实项目「七日祭」和目标图 `img-prompt-S01E01_SHOT_01-t2i-1777745392235-0-1777768853880-0` 复测：`prompt_chars=15028`、`context_chars=12681`、`user_edits_chars=2034`，上下文键为 `target_video_source/target_shot/target_prompt/related_image_candidates/qc_reports/style_and_rules/video_settings`。
+  - 已通过 `npm --workspace apps/web run build`、`apps/api/.venv/Scripts/python.exe -m pytest`（28 passed）和 `git diff --check`。
+- 发布建议一句话：本轮从前端入参和后端切片两侧修复 S08 视频生成上下文超限，可覆盖当前 68925 chars 报错，并降低批量视频生成前的文本处理负担。

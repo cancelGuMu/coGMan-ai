@@ -422,14 +422,18 @@ def _relevant_context_for_task(task_id: str, project: ProjectRecord, target: Any
             "assets": _asset_summary(project),
         }
     if task_id.startswith("S08_"):
+        target_shot_id = _target_shot_id(target)
+        target_asset_id = _target_asset_id(target)
         return {
             "target_video_source": sanitize_for_ai(target),
-            "shots": _shots_summary(project, limit=20),
-            "image_candidates": _images_summary(project, limit=30),
-            "prompts": _prompts_summary(project, limit=20),
+            "target_shot": _single_shot_summary(project, target_shot_id),
+            "target_prompt": _single_prompt_summary(project, target_shot_id),
+            "related_image_candidates": _related_images_summary(project, target_shot_id, limit=6),
+            "qc_reports": _quality_reports_for_asset(project, target_asset_id, limit=6),
+            "style_and_rules": _style_rules(project),
             "video_settings": {
-                "motion_settings": clip_text(project.step_eight.motion_settings, 2_000),
-                "reference_bindings": clip_text(project.step_eight.reference_bindings, 2_000),
+                "motion_settings": clip_text(project.step_eight.motion_settings, 1_000),
+                "reference_bindings": clip_text(project.step_eight.reference_bindings, 1_000),
             },
         }
     if task_id.startswith("S09_"):
@@ -734,6 +738,14 @@ def _target_shot_id(target: Any) -> str:
     return str(shot_id).strip() if shot_id else ""
 
 
+def _target_asset_id(target: Any) -> str:
+    target = sanitize_for_ai(target)
+    if not isinstance(target, dict):
+        return ""
+    asset_id = target.get("id") or target.get("asset_id") or target.get("source_image_id")
+    return str(asset_id).strip() if asset_id else ""
+
+
 def _single_shot_summary(project: ProjectRecord, shot_id: str) -> dict[str, Any]:
     for item in project.step_four.shots:
         if item.id != shot_id:
@@ -829,6 +841,27 @@ def _related_images_summary(project: ProjectRecord, shot_id: str, limit: int) ->
         }
         for item in related[:limit]
     ]
+
+
+def _quality_reports_for_asset(project: ProjectRecord, asset_id: str, limit: int) -> list[dict[str, Any]]:
+    if not asset_id:
+        return []
+    return [
+        {
+            "id": item.id,
+            "asset_id": item.asset_id,
+            "shot_label": clip_text(item.shot_label, 160),
+            "severity": item.severity,
+            "category": item.category,
+            "issue": clip_text(item.issue, 500),
+            "suggestion": clip_text(item.suggestion, 500),
+            "repair_prompt": clip_text(item.repair_prompt, 800),
+            "status": item.status,
+            "recheck_result": clip_text(item.recheck_result, 500),
+        }
+        for item in project.step_seven.reports
+        if item.asset_id == asset_id
+    ][:limit]
 
 
 def _videos_summary(project: ProjectRecord, limit: int) -> list[dict[str, Any]]:
