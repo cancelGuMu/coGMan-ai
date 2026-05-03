@@ -3416,6 +3416,9 @@ select:focus {
 }
 
 .asset-workbench {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.55fr) minmax(0, 1.45fr);
+  gap: 18px;
   align-items: start;
 }
 
@@ -3428,9 +3431,10 @@ select:focus {
   display: grid;
   gap: 4px;
   padding: 14px;
-  border: 1px solid rgba(255, 228, 168, 0.1);
-  border-radius: 18px;
-  background: rgba(255, 248, 230, 0.05);
+  border: 1px solid rgba(255, 228, 168, 0.14);
+  border-radius: 14px;
+  background: rgba(39, 32, 23, 0.88);
+  box-shadow: inset 0 1px 0 rgba(255, 244, 214, 0.08);
 }
 
 .asset-category-row + .asset-category-row {
@@ -3443,17 +3447,16 @@ select:focus {
   font-style: normal;
 }
 
-.asset-placeholder-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
 .asset-page-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
   margin: 14px 0;
+}
+
+.asset-workbench .asset-empty-copy {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .asset-page-panel,
@@ -3467,9 +3470,16 @@ select:focus {
   gap: 14px;
 }
 
-.asset-card-grid > .rewrite-head,
-.asset-card-grid > .asset-empty-copy {
+.asset-card-grid > .rewrite-head {
   grid-column: 1 / -1;
+}
+
+.create-center-shell .asset-card-grid .asset-edit-card {
+  border: 1px solid rgba(255, 228, 168, 0.14);
+  background: rgba(39, 32, 23, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 214, 0.08),
+    0 16px 34px rgba(0, 0, 0, 0.16);
 }
 
 .asset-edit-card {
@@ -3490,10 +3500,10 @@ select:focus {
 .asset-card-feedback {
   display: block;
   padding: 8px 10px;
-  border: 1px solid rgba(92, 122, 255, 0.18);
+  border: 1px solid rgba(232, 189, 99, 0.22);
   border-radius: 12px;
-  background: rgba(92, 122, 255, 0.1);
-  color: #30417a;
+  background: rgba(232, 189, 99, 0.1);
+  color: #f4d58c;
   font-size: 12px;
   font-weight: 800;
   line-height: 1.5;
@@ -3521,6 +3531,19 @@ select:focus {
   padding: 10px 12px;
   border-radius: 12px;
   font-size: 13px;
+}
+
+.asset-workbench .mode-switch {
+  border-color: rgba(255, 228, 168, 0.18);
+  background: rgba(38, 29, 20, 0.88);
+  color: #d7c28f;
+  box-shadow: inset 0 1px 0 rgba(255, 244, 214, 0.08);
+}
+
+.asset-workbench .mode-switch.active {
+  border-color: rgba(232, 189, 99, 0.54);
+  background: linear-gradient(180deg, rgba(232, 189, 99, 0.2), rgba(232, 189, 99, 0.1));
+  color: #ffd86f;
 }
 
 .asset-edit-card textarea {
@@ -3583,6 +3606,16 @@ select:focus {
   object-fit: cover;
   border-radius: 18px;
   border: 1px solid rgba(255, 228, 168, 0.12);
+}
+
+.repaint-field {
+  min-width: 0;
+  margin: 0;
+}
+
+.repaint-field textarea {
+  min-height: 86px;
+  resize: vertical;
 }
 
 .production-card input,
@@ -4404,6 +4437,10 @@ select:focus {
 }
 
 @media (max-width: 980px) {
+  .asset-workbench {
+    grid-template-columns: 1fr;
+  }
+
   .rank-row {
     grid-template-columns: 28px minmax(132px, 1fr) minmax(110px, 0.8fr) 76px;
     gap: 12px;

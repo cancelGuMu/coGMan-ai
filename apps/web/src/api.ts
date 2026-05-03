@@ -28,6 +28,13 @@ import { MAX_IMPORT_FILE_BYTES, assertImportableFile } from "./payload";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
+type GenerateTextTaskMeta = {
+  project_id?: string;
+  target_id?: string;
+  target_type?: string;
+  context_mode?: string;
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {
@@ -173,17 +180,26 @@ export async function saveStepEleven(projectId: string, data: StepElevenData): P
   return response.project;
 }
 
-export async function generateStepOneOutline(projectName: string, prompt: string): Promise<GeneratedTextResponse> {
+export async function generateStepOneOutline(
+  projectName: string,
+  prompt: string,
+  meta?: GenerateTextTaskMeta
+): Promise<GeneratedTextResponse> {
   return request<GeneratedTextResponse>("/api/generate/step-one-season-outline", {
     method: "POST",
-    body: JSON.stringify({ project_name: projectName, prompt, mode: "outline" }),
+    body: JSON.stringify({ project_name: projectName, prompt, mode: "outline", ...meta }),
   });
 }
 
-export async function generateStepOneTask(projectName: string, prompt: string, taskId: string): Promise<GeneratedTextResponse> {
+export async function generateStepOneTask(
+  projectName: string,
+  prompt: string,
+  taskId: string,
+  meta?: GenerateTextTaskMeta
+): Promise<GeneratedTextResponse> {
   return request<GeneratedTextResponse>("/api/generate/step-one-season-outline", {
     method: "POST",
-    body: JSON.stringify({ project_name: projectName, prompt, mode: "foundation", task_id: taskId }),
+    body: JSON.stringify({ project_name: projectName, prompt, mode: "foundation", task_id: taskId, ...meta }),
   });
 }
 
@@ -203,6 +219,10 @@ export async function generateTextTask(input: {
   prompt: string;
   mode?: string;
   task_id: string;
+  project_id?: string;
+  target_id?: string;
+  target_type?: string;
+  context_mode?: string;
 }): Promise<GeneratedTextResponse> {
   return request<GeneratedTextResponse>("/api/generate/text-task", {
     method: "POST",
@@ -211,6 +231,10 @@ export async function generateTextTask(input: {
       prompt: input.prompt,
       mode: input.mode ?? "generic",
       task_id: input.task_id,
+      project_id: input.project_id,
+      target_id: input.target_id,
+      target_type: input.target_type,
+      context_mode: input.context_mode,
     }),
   });
 }

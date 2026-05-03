@@ -3,11 +3,13 @@ from __future__ import annotations
 import base64
 import json
 import os
+import http.client
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
 
+from .context_builder import ContextValidationError, validate_ai_output
 from .prompt_registry import build_text_messages
 
 
@@ -49,6 +51,61 @@ def resolve_image_size(prompt: str, shot_label: str = "") -> str:
     if any(marker in combined for marker in square_markers):
         return "1024x1024"
     return configured or "auto"
+
+
+def _image_prompt_for_api(prompt: str, shot_label: str = "") -> str:
+    prompt = prompt.strip()
+    if _env("IMAGE_GENERATION_WRAP_PROMPT", "false").lower() in {"1", "true", "yes"}:
+        return build_image_generation_prompt(prompt, shot_label)
+    return prompt
+
+
+def _compact_image_prompt(prompt: str, shot_label: str = "") -> str:
+    combined = f"{shot_label}\n{prompt}".strip()
+    if len(combined) > 420:
+        combined = combined[:420]
+    lower = combined.lower()
+    if any(marker in combined for marker in ("三视图", "正面、侧面、背面", "正面、侧面、背面并排")) or "turnaround" in lower:
+        return (
+            "Character turnaround sheet, front view, side view, back view, "
+            "same character, consistent outfit and hairstyle, clean white background, no text. "
+            f"Reference details: {combined}"
+        )
+    if any(marker in combined for marker in ("场景概念图", "横版构图", "空间结构")):
+        return (
+            "Wide environment concept art, clear spatial layout, cinematic composition, no text. "
+            f"Reference details: {combined}"
+        )
+    return combined
+
+
+def _image_payload_candidates(prompt: str, shot_label: str, model: str) -> list[dict[str, Any]]:
+    group = _env("IMAGE_GENERATION_GROUP")
+    quality = _env("IMAGE_GENERATION_QUALITY", "auto") or "auto"
+    primary_prompt = _image_prompt_for_api(prompt, shot_label)
+    compact_prompt = _compact_image_prompt(prompt, shot_label)
+    primary_size = resolve_image_size(prompt, shot_label)
+    configured_size = _env("IMAGE_GENERATION_SIZE", "auto") or "auto"
+    candidates: list[dict[str, Any]] = []
+
+    def add(candidate_prompt: str, size: str) -> None:
+        payload = {
+            "model": model,
+            "group": group,
+            "prompt": candidate_prompt,
+            "n": 1,
+            "size": size,
+            "quality": quality,
+        }
+        if payload not in candidates:
+            candidates.append(payload)
+
+    add(primary_prompt, primary_size)
+    add(primary_prompt, configured_size)
+    add(primary_prompt, "auto")
+    add(compact_prompt, "auto")
+    add(compact_prompt, "1024x1024")
+    return candidates
 
 
 def build_video_generation_prompt(prompt: str, shot_label: str = "") -> str:
@@ -101,6 +158,8 @@ def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str], timeo
         raise AIServiceError(f"AI 接口请求失败：HTTP {exc.code} {detail}") from exc
     except urllib.error.URLError as exc:
         raise AIServiceError(f"AI 接口连接失败：{exc.reason}") from exc
+    except (http.client.RemoteDisconnected, http.client.IncompleteRead) as exc:
+        raise AIServiceError("AI image upstream response was interrupted") from exc
     except TimeoutError as exc:
         raise AIServiceError("AI 接口请求超时") from exc
 
@@ -143,7 +202,13 @@ def generate_deepseek_text(project_name: str, prompt: str, mode: str, task_id: s
     content = (choices[0].get("message") or {}).get("content")
     if not isinstance(content, str) or not content.strip():
         raise AIServiceError("DeepSeek 返回内容为空")
-    return content.strip()
+    content = content.strip()
+    if task_id:
+        try:
+            validate_ai_output(task_id, content)
+        except ContextValidationError as exc:
+            raise AIServiceError(f"DeepSeek 输出不符合任务契约：{exc}") from exc
+    return content
 
 
 def generate_image(prompt: str, shot_label: str = "") -> dict[str, str]:
@@ -153,22 +218,22 @@ def generate_image(prompt: str, shot_label: str = "") -> dict[str, str]:
 
     base_url = _env("IMAGE_GENERATION_BASE_URL", "https://www.aiartmirror.com").rstrip("/")
     model = _env("IMAGE_GENERATION_MODEL", "gpt-image-2")
-    payload = {
-        "model": model,
-        "prompt": build_image_generation_prompt(prompt, shot_label),
-        "n": 1,
-        "size": resolve_image_size(prompt, shot_label),
-        "quality": _env("IMAGE_GENERATION_QUALITY", "auto"),
-    }
-    group = _env("IMAGE_GENERATION_GROUP")
-    if group:
-        payload["group"] = group
-    data = _post_json(
-        _api_url(base_url, "/v1/images/generations"),
-        payload,
-        {"Authorization": f"Bearer {api_key}"},
-        timeout=240,
-    )
+    errors: list[str] = []
+    data: dict[str, Any] | None = None
+    for payload in _image_payload_candidates(prompt, shot_label, model):
+        try:
+            data = _post_json(
+                _api_url(base_url, "/v1/images/generations"),
+                payload,
+                {"Authorization": f"Bearer {api_key}"},
+                timeout=600,
+            )
+            break
+        except AIServiceError as exc:
+            errors.append(str(exc))
+    if data is None:
+        detail = "；".join(errors[-2:]) if errors else "unknown"
+        raise AIServiceError(f"Image generation failed after retries: {detail}")
     items = data.get("data") or []
     if not items:
         raise AIServiceError("图片生成接口未返回图片")

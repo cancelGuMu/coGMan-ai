@@ -1,5 +1,6 @@
 import type {
   ProjectRecord,
+  ShotItem,
   StepEightData,
   StepElevenData,
   StepCompletionStatus,
@@ -15,6 +16,76 @@ import type {
   StepTwoData,
   WorkflowStepDetail,
 } from "./types";
+
+function hasShotText(value: string | undefined) {
+  const text = (value ?? "").trim();
+  return Boolean(text) && !/^(待确认|待补充|未填写|暂无|无|none|n\/a)([:：\s].*)?$/i.test(text);
+}
+
+function firstShotText(...values: Array<string | undefined>) {
+  return values.find((value) => hasShotText(value))?.trim() ?? "";
+}
+
+function listText(values: string[] | undefined, empty = "") {
+  return values?.filter((item) => item.trim()).join("、") || empty;
+}
+
+function inferLensFromShotSize(shotSize: string | undefined) {
+  const value = shotSize ?? "";
+  if (/全景|远景|大远景/.test(value)) return "广角视角，优先交代空间关系";
+  if (/特写|近景|细节/.test(value)) return "中长焦或近距视角，突出表情/关键物";
+  if (/中景/.test(value)) return "35mm-50mm 标准视角，兼顾人物和环境";
+  return "";
+}
+
+function withDefaultShotFields(shot: Partial<ShotItem>, index: number, selectedEpisodeNumber: number): ShotItem {
+  const scene = shot.scene ?? "";
+  const purpose = shot.purpose ?? "";
+  const shotSize = shot.shot_size ?? "";
+  const cameraAngle = shot.camera_angle ?? "";
+  const composition = shot.composition ?? "";
+  const movement = shot.movement ?? "";
+  const dialogue = shot.dialogue ?? "";
+  const characters = shot.characters ?? [];
+  const props = shot.props ?? [];
+  const characterText = listText(characters, "本镜头无明确角色");
+  const propText = listText(props, "本镜头无明确道具");
+  const cameraText = [shotSize, cameraAngle, composition, movement].filter(hasShotText).join("；");
+  const assetRequirements = [`场景：${scene || "未指定"}`, `角色：${characterText}`, `道具：${propText}`].join("；");
+
+  return {
+    id: shot.id ?? `shot-${index + 1}`,
+    episode_number: shot.episode_number ?? selectedEpisodeNumber,
+    shot_number: shot.shot_number ?? index + 1,
+    scene,
+    characters,
+    props,
+    purpose,
+    story_beat: firstShotText(shot.story_beat, purpose, shot.rhythm),
+    visual_description: firstShotText(shot.visual_description, [scene, composition, shotSize, cameraAngle].filter(hasShotText).join("；")),
+    action: firstShotText(shot.action, purpose, dialogue),
+    blocking: firstShotText(shot.blocking, composition, characters.length ? `${characterText} 按构图站位，围绕 ${scene || "当前场景"} 调度` : ""),
+    duration_seconds: shot.duration_seconds ?? 5,
+    shot_size: shotSize,
+    camera_angle: cameraAngle,
+    composition,
+    lens: firstShotText(shot.lens, inferLensFromShotSize(shotSize)),
+    movement,
+    camera_motion: firstShotText(shot.camera_motion, movement),
+    lighting: firstShotText(shot.lighting, scene ? `${scene} 的既有光源与氛围照明` : ""),
+    color_mood: firstShotText(shot.color_mood, purpose),
+    dialogue,
+    sound_design: firstShotText(shot.sound_design, dialogue ? `对白/旁白：${dialogue}` : scene ? `${scene} 环境底噪，音效跟随主要动作` : ""),
+    rhythm: shot.rhythm ?? "",
+    transition: firstShotText(shot.transition, "硬切，保持镜头顺序连续"),
+    continuity_notes: firstShotText(shot.continuity_notes, `${assetRequirements}；保持与前后镜头一致`),
+    asset_requirements: firstShotText(shot.asset_requirements, assetRequirements),
+    generation_notes: firstShotText(shot.generation_notes, `${assetRequirements}；${cameraText || "按当前分镜执行"}；不在画面中生成字幕或无关文字`),
+    vfx_notes: firstShotText(shot.vfx_notes, "无特殊后期"),
+    risk_flags: firstShotText(shot.risk_flags, "自动回填字段需在生成前复核角色、场景、道具一致性"),
+    status: shot.status ?? "draft",
+  };
+}
 
 export const workflowSteps: Array<{ id: StepId; label: string }> = [
   { id: "story-structure", label: "01 故事架构" },
@@ -273,7 +344,7 @@ export function defaultStepFiveData(): StepFiveData {
     selected_episode_number: 1,
     filter_text: "",
     prompts: [],
-    negative_template: "低清晰度、畸形手指、角色不一致、字幕残影、过曝、模糊",
+    negative_template: "low resolution, deformed fingers, character inconsistency, subtitle artifacts, overexposure, blurry",
     parameter_template: "16:9, 1080p, cinematic lighting, seed fixed",
     batch_replace_from: "",
     batch_replace_to: "",
@@ -398,6 +469,9 @@ export function mergeProjectDefaults(project: ProjectRecord): ProjectRecord {
     step_four: {
       ...stepFourDefaults,
       ...(project.step_four ?? stepFourDefaults),
+      shots: (project.step_four?.shots ?? stepFourDefaults.shots).map((shot, index) =>
+        withDefaultShotFields(shot, index, project.step_four?.selected_episode_number ?? stepFourDefaults.selected_episode_number)
+      ),
     },
     step_five: {
       ...stepFiveDefaults,
@@ -406,6 +480,11 @@ export function mergeProjectDefaults(project: ProjectRecord): ProjectRecord {
     step_six: {
       ...stepSixDefaults,
       ...(project.step_six ?? stepSixDefaults),
+      candidates: (project.step_six?.candidates ?? stepSixDefaults.candidates).map((candidate) => ({
+        ...candidate,
+        repaint_instruction: candidate.repaint_instruction ?? "",
+        repaint_prompt: candidate.repaint_prompt ?? "",
+      })),
     },
     step_seven: {
       ...stepSevenDefaults,

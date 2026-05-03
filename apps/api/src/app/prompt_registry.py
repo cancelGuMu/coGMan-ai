@@ -37,6 +37,19 @@ REVIEW_MODEL_SYSTEM = """你是 coMGan-ai 的检查与复审模型。
 你的任务是先发现问题，再给出修复建议；不要因为整体观感不错就忽略连续性、可生产性、角色一致性或下游阻断风险。"""
 
 
+DIRECTORIAL_GRAMMAR_GUIDE = """导演镜头语言规则：
+1. 每个镜头必须有明确叙事功能：建立空间、交代关系、揭示线索、隐藏信息、推进动作、制造悬念、展示反应或完成情绪转折；不得只写“好看”的镜头。
+2. 景别含义：大远景/远景用于建立环境、孤立感和人物处境；全景用于交代人物与空间关系；中景用于动作、对峙和交流；近景/中近景用于心理压力和表情；特写用于线索、手部动作、关键道具和情绪爆点；极特写用于惊觉、疑点、证据和危险预兆。
+3. 机位含义：平视让观众平等观察；低机位增强压迫、威胁、权力或不安；高机位削弱人物、制造脆弱或被监视感；俯拍用于空间关系、调查布局和命运感，但不能误用成无动机上帝视角；仰拍用于压迫和权力；斜角用于心理失衡；肩后和主观视角用于信息共享、秘密窥视和角色代入；反应镜头用于让观众感受信息造成的情绪结果。
+4. 焦段与透视：广角强调空间压迫、距离、畸变和环境威胁；标准焦段保持真实观察；长焦压缩空间、制造窥视感或隔离感；微距/特写用于证据细节。焦段必须服务剧情，不得随意堆叠。
+5. 构图与视线：角色看的东西必须处在角色视线逻辑内；信息载体朝向角色或处在主观/肩后/侧后视角中；重要信息先给动作动机，再给插入镜头或反应镜头；不得把本应给角色看的物件正面摆给观众。
+6. 运镜含义：定镜用于压抑、冷静观察和不安等待；缓慢推近用于发现、逼迫和心理压力；拉远用于孤立、失控和真相扩大；横移/跟拍用于调查流程和空间搜索；摇移用于揭示隐藏信息；手持用于紧张、不稳定和主观慌乱；快速运动只用于明确惊变，不能破坏信息可读性。
+7. 信息展示顺序：先建立观众的位置和角色动机，再展示线索；需要观众知道的信息用插入镜头、主观视角或角色反应承接；需要保密的信息用遮挡、浅景深、背面、反光、局部可见或延迟揭示。
+8. 情绪表达：恐惧来自未知与遮挡，悬疑来自缺失信息，压迫来自低调光、空间挤压和低/高机位，震惊来自特写与反应，孤独来自远景和负空间，对峙来自正反打、轴线和视线匹配。
+9. 连续性：保持轴线、视线方向、角色站位、道具朝向、光源方向和动作接续；镜头切换必须让观众知道谁在看、看什么、为什么看，以及看完之后情绪如何变化。
+10. 输出到图片/视频模型时，把导演意图翻译成可执行英文镜头词，如 establishing shot, medium close-up, over-the-shoulder, POV, insert shot, reaction shot, low angle, high angle, slow push-in, shallow depth of field, motivated framing。"""
+
+
 @dataclass(frozen=True)
 class PromptTask:
     task_id: str
@@ -345,11 +358,16 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         step_id="storyboard-planning",
         model_role="text_planner",
         system_prompt=TEXT_MODEL_SYSTEM,
-        user_instruction="把正式剧本拆成镜头级生产表。",
+        user_instruction=(
+            "把正式剧本拆成产品级镜头生产表，保证每个镜头都能被提词、生图、视频、配音字幕和剪辑直接消费。"
+            "必须像导演一样为每个镜头选择景别、机位、焦段、构图、运镜、信息揭示方式和情绪功能，"
+            "并说明镜头为什么这样拍，如何让观众看到该看的信息、感受到该有的情绪。"
+            f"{DIRECTORIAL_GRAMMAR_GUIDE}"
+        ),
         output_contract=json_contract(
-            '{"shots":[{"shot_id":"稳定镜头ID","episode_number":1,"shot_number":1,"scene":"场景","characters":["角色"],"props":["道具"],"purpose":"剧情目的","duration_seconds":5,"shot_size":"景别","camera_angle":"角度","composition":"构图与站位","movement":"运镜","dialogue":"对白/旁白引用","rhythm":"节奏"}],"task_preview":"镜头任务队列摘要","total_duration_seconds":0}',
+            '{"shots":[{"shot_id":"稳定镜头ID","episode_number":1,"shot_number":1,"scene":"场景","characters":["角色"],"props":["道具"],"purpose":"剧情目的","story_beat":"故事节拍/情绪节点","visual_description":"画面主体与可见信息","action":"角色动作/事件动作","blocking":"角色走位/站位/场面调度","duration_seconds":5,"shot_size":"景别","camera_angle":"角度","composition":"构图与站位","lens":"镜头焦段/视角","movement":"运镜概括","camera_motion":"摄影机运动细节","lighting":"光线","color_mood":"色彩与情绪","dialogue":"对白/旁白引用","sound_design":"环境声/音效/BGM","rhythm":"节奏","transition":"入出场/转场","continuity_notes":"前后镜头连续性","asset_requirements":"角色/场景/道具绑定要求","generation_notes":"给图片/视频生成的硬约束","vfx_notes":"特效/后期说明","risk_flags":"风险/待确认/容易生成失败点"}],"task_preview":"镜头任务队列摘要","total_duration_seconds":0}',
             "step_four.shots、step_four.task_preview、step_four.total_duration_seconds",
-            "shot_number 必须从 1 连续递增；不得漏掉关键对白、动作和反转。",
+            "shot_number 必须从 1 连续递增；不得漏掉关键对白、动作和反转。每个镜头至少填写剧情目的、故事节拍、画面描述、动作、调度、摄影、声音/对白、转场/连续性、资产绑定、生成约束和风险点；generation_notes 必须包含导演意图、信息揭示方式、情绪目标和连续性约束；缺失信息写“待确认：原因”，不要留空。",
         ),
     ),
     "S04_STORYBOARD_CHECK": PromptTask(
@@ -357,10 +375,15 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         step_id="storyboard-planning",
         model_role="reviewer",
         system_prompt=REVIEW_MODEL_SYSTEM,
-        user_instruction="检查分镜是否漏掉关键台词、角色、道具、反转，以及是否可被下游生成。",
+        user_instruction=(
+            "检查分镜是否达到产品级生产表要求，以及是否可被下游提示词、生图、视频、配音字幕和剪辑消费。"
+            "同时检查每个镜头的景别、机位、焦段、构图、运镜、视线、信息揭示和情绪表达是否有导演动机。"
+            f"{DIRECTORIAL_GRAMMAR_GUIDE}"
+        ),
         output_contract=json_contract(
-            '{"pass_for_prompt_generation":true,"issues":[{"severity":"low|medium|high","shot_id":"镜头ID","issue":"问题","suggestion":"修复建议"}]}',
+            '{"pass_for_prompt_generation":true,"product_ready":true,"issues":[{"severity":"low|medium|high","shot_id":"镜头ID","field":"缺失或有风险的字段","issue":"问题","suggestion":"修复建议"}],"coverage":{"shot_number_continuous":true,"has_visual_description":true,"has_action_blocking":true,"has_camera_sound_transition":true,"has_asset_bindings":true,"has_generation_constraints":true}}',
             "step_four.task_preview 或人工审核区",
+            "必须检查 shot_number 连续、关键对白/动作/反转未遗漏；每镜头至少有 purpose、story_beat、visual_description、action、blocking、shot_size、camera_angle、composition、lens/camera_motion、dialogue 或 sound_design、transition 或 continuity_notes、asset_requirements、generation_notes、risk_flags；若镜头语言不能表达情绪或信息，必须提出修复建议。",
         ),
     ),
     "S05_T2I_PROMPT": PromptTask(
@@ -368,11 +391,19 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         step_id="prompt-generation",
         model_role="prompt_engineer",
         system_prompt=PROMPT_ENGINEER_SYSTEM,
-        user_instruction="为镜头生成 T2I 图片提示词，一镜一提示词，注入角色、场景、道具、风格和构图。",
+        user_instruction=(
+            "为镜头生成 T2I 图片提示词，一镜一提示词，注入角色、场景、道具、风格和构图。"
+            "positive_prompt、negative_prompt、parameters、locked_terms 内的模型提示词必须统一使用英文，"
+            "不得中英混写；中文角色名、场景名、道具名需转写为稳定英文名或拼音，并在同一项目内保持一致。"
+            "必须维护角色视线与道具朝向一致：当角色正在阅读、查看、拍摄或检查笔记、报告、照片、手机、档案等信息载体时，"
+            "信息载体应朝向角色或处在角色主观/肩后视角中，不得像展板一样正面朝向观众。"
+            "必须把分镜中的导演意图转译成英文镜头语言，明确景别、机位、焦段/透视、构图、焦点、信息揭示方式、情绪目标和连续性。"
+            f"{DIRECTORIAL_GRAMMAR_GUIDE}"
+        ),
         output_contract=json_contract(
             '{"positive_prompt":"图片正向提示词","negative_prompt":"图片负面提示词","parameters":"比例、分辨率、种子、参考权重等参数","source_asset_ids":["资产ID"],"locked_terms":["锁定词"],"generation_notes":"生成说明","risk_notes":"风险提示"}',
             "step_five.prompts[].t2i_prompt、negative_prompt、parameters、locked_terms",
-            "不得把对白字幕直接画成画面文字；必须保留角色一致性、场景、构图和风格约束。",
+            "不得把对白字幕直接画成画面文字；必须保留角色一致性、场景、构图和风格约束。positive_prompt 和 negative_prompt 必须是纯英文提示词，不得夹杂中文词、中文标点或中文说明。positive_prompt 必须包含可执行导演镜头词，例如 shot size、camera angle、lens or perspective、composition、focus target、emotional purpose、information reveal；若画面中角色正在看信息载体，positive_prompt 必须加入视线一致性构图约束，例如 over-the-shoulder view、POV from the character、page angled toward the character、not front-facing to viewer；negative_prompt 必须排除 front-facing document to viewer、display board composition、prop presented to audience、contradictory eyeline、unmotivated camera angle、unclear visual hierarchy。",
         ),
     ),
     "S05_I2V_PROMPT": PromptTask(
@@ -380,11 +411,17 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         step_id="prompt-generation",
         model_role="prompt_engineer",
         system_prompt=PROMPT_ENGINEER_SYSTEM,
-        user_instruction="为镜头生成 I2V 视频提示词，重点描述动作、表情、运镜和节奏。",
+        user_instruction=(
+            "为镜头生成 I2V 视频提示词，重点描述动作、表情、运镜和节奏。"
+            "motion_prompt、camera_prompt、full_prompt、negative_prompt、parameters、locked_terms 内的模型提示词必须统一使用英文，"
+            "不得中英混写；中文角色名、场景名、道具名需转写为稳定英文名或拼音，并在同一项目内保持一致。"
+            "必须把分镜中的导演意图转译为视频可执行的镜头运动、节奏、情绪推进、视线承接和信息揭示方式。"
+            f"{DIRECTORIAL_GRAMMAR_GUIDE}"
+        ),
         output_contract=json_contract(
             '{"motion_prompt":"角色动作与表情","camera_prompt":"运镜与镜头节奏","full_prompt":"可直接提交视频模型的完整提示词","negative_prompt":"视频负面词","duration_seconds":6,"parameters":"视频模型参数","locked_terms":["锁定词"]}',
             "step_five.prompts[].i2v_prompt、negative_prompt、parameters、locked_terms；step_eight.motion_prompt 可复用",
-            "必须继承分镜时长、动作、运镜，不得改写剧情事实。",
+            "必须继承分镜时长、动作、运镜，不得改写剧情事实。full_prompt 和 negative_prompt 必须是纯英文提示词，不得夹杂中文词、中文标点或中文说明。full_prompt 必须说明 camera motion motivation、pacing、eyeline continuity、focus transition、information reveal 和 emotional beat；不得使用无动机乱晃、乱推拉或破坏信息可读性的运动。",
         ),
     ),
     "S05_NEGATIVE_PROMPT": PromptTask(
@@ -392,10 +429,11 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         step_id="prompt-generation",
         model_role="prompt_engineer",
         system_prompt=PROMPT_ENGINEER_SYSTEM,
-        user_instruction="生成全局、角色、场景、镜头或视频作用域的负面提示词。",
+        user_instruction="生成全局、角色、场景、镜头或视频作用域的负面提示词。prompt_text 与 terms 必须统一使用英文，不得中英混写。",
         output_contract=json_contract(
             '{"terms":["负面词"],"prompt_text":"拼接后的负面提示词","scope":"global|character|scene|shot|video","source_rule_ids":["规则ID"],"enabled":true}',
             "step_five.negative_template 或 prompts[].negative_prompt",
+            "prompt_text 与 terms 必须是纯英文负面提示词，不得夹杂中文词、中文标点或中文说明。",
         ),
     ),
     "S05_PROMPT_CHECK": PromptTask(
@@ -426,11 +464,17 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         step_id="image-generation",
         model_role="prompt_engineer",
         system_prompt=PROMPT_ENGINEER_SYSTEM,
-        user_instruction="生成局部重绘提示词，只修复指定区域，不改其他已通过内容。",
+        user_instruction=(
+            "根据用户提交的画面修改意见，先修订完整 T2I 生图提示词，再交给图片模型重绘。"
+            "输出必须是可直接提交给 gpt-image-2 的完整英文提示词，不是零散短语。"
+            "必须保留原镜头角色、服装、场景、风格、导演镜头语言和连续性，只修复用户指出的不符合结构之处。"
+            "若问题涉及角色视线、道具朝向或信息载体正面展示给观众，必须修复为角色主观/肩后/侧后视角，并排除矛盾视线。"
+            f"{DIRECTORIAL_GRAMMAR_GUIDE}"
+        ),
         output_contract=json_contract(
-            '{"repaint_prompt":"局部重绘提示词","negative_prompt":"负面词","keep_terms":["必须保持不变的元素"],"change_terms":["允许修改的元素"],"risk_notes":"风险提示"}',
+            '{"repaint_prompt":"完整英文 T2I 重绘提示词，可直接提交 gpt-image-2","negative_prompt":"英文负面词","keep_terms":["必须保持不变的元素"],"change_terms":["允许修改的元素"],"risk_notes":"风险提示"}',
             "step_six.repaint_prompt 与 candidates[].repaint_prompt",
-            "只修复用户指定区域；不得改变已通过的脸型、服装、场景、构图和镜头目的。",
+            "只修复用户指定区域；不得改变已通过的脸型、服装、场景、构图和镜头目的。repaint_prompt 和 negative_prompt 必须是纯英文；repaint_prompt 必须包含 shot size、camera angle、composition、focus target、eyeline continuity、prop orientation、information reveal 和 emotional purpose。",
         ),
     ),
     "S07_IMAGE_QC": PromptTask(
@@ -461,11 +505,15 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         step_id="video-generation",
         model_role="prompt_engineer",
         system_prompt=PROMPT_ENGINEER_SYSTEM,
-        user_instruction="组装视频生成任务输入，默认只使用通过质检的素材。",
+        user_instruction=(
+            "组装视频生成任务输入，默认只使用通过质检的素材。"
+            "必须继承分镜和 I2V 提示词里的导演意图，明确镜头运动为什么发生、如何承接角色视线、如何揭示信息、如何推进情绪。"
+            f"{DIRECTORIAL_GRAMMAR_GUIDE}"
+        ),
         output_contract=json_contract(
             '{"task_type":"i2v","shot_id":"镜头ID","source_asset_ids":["通过质检的图片ID"],"prompt":"视频完整提示词","negative_prompt":"视频负面词","duration_seconds":6,"parameters":"模型参数"}',
             "视频模型请求体；成功后写入 step_eight.clips[]",
-            "默认只使用 step_seven 已通过的素材；不得越过质检失败素材。",
+            "默认只使用 step_seven 已通过的素材；不得越过质检失败素材。prompt 必须是纯英文视频提示词，包含 motivated camera movement、pacing、eyeline continuity、focus transition、information reveal、emotional beat；negative_prompt 必须排除 unmotivated camera movement、random shake、broken eyeline、unclear visual hierarchy、prop presented to audience。",
         ),
     ),
     "S08_VIDEO_QC": PromptTask(

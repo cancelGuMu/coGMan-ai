@@ -185,13 +185,28 @@ export type ShotItem = {
   characters: string[];
   props: string[];
   purpose: string;
+  story_beat: string;
+  visual_description: string;
+  action: string;
+  blocking: string;
   duration_seconds: number;
   shot_size: string;
   camera_angle: string;
   composition: string;
+  lens: string;
   movement: string;
+  camera_motion: string;
+  lighting: string;
+  color_mood: string;
   dialogue: string;
+  sound_design: string;
   rhythm: string;
+  transition: string;
+  continuity_notes: string;
+  asset_requirements: string;
+  generation_notes: string;
+  vfx_notes: string;
+  risk_flags: string;
   status: "draft" | "ready" | "queued";
 };
 
@@ -233,6 +248,7 @@ export type ImageCandidate = {
   prompt: string;
   status: "candidate" | "keyframe" | "first-frame" | "selected" | "discarded";
   metadata: string;
+  repaint_instruction: string;
   repaint_prompt: string;
 };
 

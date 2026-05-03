@@ -244,6 +244,114 @@ function textValue(value: unknown, fallback = ""): string {
   return fallback;
 }
 
+const modelPromptCjkPattern = /[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]/;
+
+function modelPromptFieldsContainCjk(parsed: Record<string, unknown>, mode: "t2i" | "i2v") {
+  const fields =
+    mode === "t2i"
+      ? ["positive_prompt", "negative_prompt", "parameters", "locked_terms"]
+      : ["motion_prompt", "camera_prompt", "full_prompt", "negative_prompt", "parameters", "locked_terms"];
+  return fields.some((field) => modelPromptCjkPattern.test(textValue(parsed[field])));
+}
+
+const directorGrammarGuide = [
+  "导演镜头语言规则：",
+  "1. 每个镜头必须有明确叙事功能：建立空间、交代关系、揭示线索、隐藏信息、推进动作、制造悬念、展示反应或完成情绪转折；不得只写“好看”的镜头。",
+  "2. 景别含义：大远景/远景用于建立环境、孤立感和人物处境；全景用于交代人物与空间关系；中景用于动作、对峙和交流；近景/中近景用于心理压力和表情；特写用于线索、手部动作、关键道具和情绪爆点；极特写用于惊觉、疑点、证据和危险预兆。",
+  "3. 机位含义：平视让观众平等观察；低机位增强压迫、威胁、权力或不安；高机位削弱人物、制造脆弱或被监视感；俯拍用于空间关系、调查布局和命运感，但不能误用成无动机上帝视角；仰拍用于压迫和权力；斜角用于心理失衡；肩后和主观视角用于信息共享、秘密窥视和角色代入；反应镜头用于让观众感受信息造成的情绪结果。",
+  "4. 焦段与透视：广角强调空间压迫、距离、畸变和环境威胁；标准焦段保持真实观察；长焦压缩空间、制造窥视感或隔离感；微距/特写用于证据细节。焦段必须服务剧情，不得随意堆叠。",
+  "5. 构图与视线：角色看的东西必须处在角色视线逻辑内；信息载体朝向角色或处在主观/肩后/侧后视角中；重要信息先给动作动机，再给插入镜头或反应镜头；不得把本应给角色看的物件正面摆给观众。",
+  "6. 运镜含义：定镜用于压抑、冷静观察和不安等待；缓慢推近用于发现、逼迫和心理压力；拉远用于孤立、失控和真相扩大；横移/跟拍用于调查流程和空间搜索；摇移用于揭示隐藏信息；手持用于紧张、不稳定和主观慌乱；快速运动只用于明确惊变，不能破坏信息可读性。",
+  "7. 信息展示顺序：先建立观众的位置和角色动机，再展示线索；需要观众知道的信息用插入镜头、主观视角或角色反应承接；需要保密的信息用遮挡、浅景深、背面、反光、局部可见或延迟揭示。",
+  "8. 情绪表达：恐惧来自未知与遮挡，悬疑来自缺失信息，压迫来自低调光、空间挤压和低/高机位，震惊来自特写与反应，孤独来自远景和负空间，对峙来自正反打、轴线和视线匹配。",
+  "9. 连续性：保持轴线、视线方向、角色站位、道具朝向、光源方向和动作接续；镜头切换必须让观众知道谁在看、看什么、为什么看，以及看完之后情绪如何变化。",
+  "10. 输出到图片/视频模型时，把导演意图翻译成可执行英文镜头词，如 establishing shot, medium close-up, over-the-shoulder, POV, insert shot, reaction shot, low angle, high angle, slow push-in, shallow depth of field, motivated framing。",
+].join("\n");
+
+function limitTextForAi(value: unknown, maxLength = 12000): string {
+  const text = textValue(value);
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}\n...[??? ${text.length - maxLength} ?????? AI ?????]`;
+}
+
+function summarizeAssetLibraryForAi(library: StepThreeData) {
+  return {
+    candidates: library.candidates.map((item) => ({
+      category: item.category,
+      name: item.name,
+      description: item.description,
+      selected: item.selected,
+    })),
+    characters: library.characters.map((item) => ({
+      name: item.name,
+      role: item.role,
+      age: item.age,
+      personality: item.personality,
+      appearance: item.appearance,
+      motivation: item.motivation,
+      outfit: item.outfit,
+      image_prompt: item.image_prompt,
+      has_image: Boolean(item.image_url),
+    })),
+    scenes: library.scenes.map((item) => ({
+      name: item.name,
+      location: item.location,
+      atmosphere: item.atmosphere,
+      episodes: item.episodes,
+      image_prompt: item.image_prompt,
+      has_image: Boolean(item.image_url),
+    })),
+    props: library.props.map((item) => ({
+      name: item.name,
+      type: item.type,
+      story_function: item.story_function,
+      image_prompt: item.image_prompt,
+      has_image: Boolean(item.image_url),
+    })),
+    style_board: library.style_board,
+    reference_notes: library.reference_notes,
+    prompt_templates: library.prompt_templates,
+    consistency_rules: library.consistency_rules,
+  };
+}
+
+function summarizeAssetCardForAi(kind: "character" | "scene" | "prop", asset: AssetCharacter | AssetScene | AssetProp) {
+  if (kind === "character") {
+    const item = asset as AssetCharacter;
+    return {
+      name: item.name,
+      role: item.role,
+      age: item.age,
+      personality: item.personality,
+      appearance: item.appearance,
+      motivation: item.motivation,
+      outfit: item.outfit,
+      image_prompt: item.image_prompt,
+      has_image: Boolean(item.image_url),
+    };
+  }
+  if (kind === "scene") {
+    const item = asset as AssetScene;
+    return {
+      name: item.name,
+      location: item.location,
+      atmosphere: item.atmosphere,
+      episodes: item.episodes,
+      image_prompt: item.image_prompt,
+      has_image: Boolean(item.image_url),
+    };
+  }
+  const item = asset as AssetProp;
+  return {
+    name: item.name,
+    type: item.type,
+    story_function: item.story_function,
+    image_prompt: item.image_prompt,
+    has_image: Boolean(item.image_url),
+  };
+}
+
+
 function compactForCompare(value: string): string {
   return value.replace(/\s|，|。|；|、|:|：|,|\.|;/g, "");
 }
@@ -374,12 +482,134 @@ function severityValue(value: unknown): "low" | "medium" | "high" {
   return severity === "low" || severity === "medium" || severity === "high" ? severity : "medium";
 }
 
-async function generateProjectTextTask(projectName: string, taskId: string, prompt: string) {
-  return generateTextTask({ project_name: projectName, task_id: taskId, mode: taskId.toLowerCase(), prompt });
+type ProjectTextTaskMeta = {
+  projectId?: string;
+  targetId?: string;
+  targetType?: string;
+  contextMode?: string;
+};
+
+async function generateProjectTextTask(projectName: string, taskId: string, prompt: string, meta?: ProjectTextTaskMeta) {
+  return generateTextTask({
+    project_name: projectName,
+    task_id: taskId,
+    mode: taskId.toLowerCase(),
+    prompt,
+    project_id: meta?.projectId,
+    target_id: meta?.targetId,
+    target_type: meta?.targetType,
+    context_mode: meta?.contextMode,
+  });
 }
 
 function parseStrictJsonOutput(raw: string): Record<string, unknown> {
   return firstJsonObject(raw);
+}
+
+function hasProductionValue(value: string | undefined) {
+  const text = (value ?? "").trim();
+  if (!text) return false;
+  return !/^(待确认|待补充|未填写|暂无|无|none|n\/a)([:：\s].*)?$/i.test(text);
+}
+
+function validateProductShot(shot: ShotItem): string[] {
+  const missing: string[] = [];
+  const requireField = (label: string, value: string | undefined) => {
+    if (!hasProductionValue(value)) missing.push(label);
+  };
+
+  requireField("场景", shot.scene);
+  requireField("剧情目的", shot.purpose);
+  requireField("故事节拍", shot.story_beat);
+  requireField("画面描述", shot.visual_description);
+  requireField("动作", shot.action);
+  requireField("走位调度", shot.blocking);
+  requireField("景别", shot.shot_size);
+  requireField("机位", shot.camera_angle);
+  requireField("构图", shot.composition);
+  if (!hasProductionValue(shot.lens) && !hasProductionValue(shot.camera_motion) && !hasProductionValue(shot.movement)) {
+    missing.push("镜头语言");
+  }
+  if (!hasProductionValue(shot.dialogue) && !hasProductionValue(shot.sound_design)) {
+    missing.push("声音/对白");
+  }
+  requireField("节奏", shot.rhythm);
+  if (!hasProductionValue(shot.transition) && !hasProductionValue(shot.continuity_notes)) {
+    missing.push("转场/连续性");
+  }
+  requireField("资产绑定", shot.asset_requirements);
+  requireField("生成约束", shot.generation_notes);
+  requireField("风险点", shot.risk_flags);
+  return missing;
+}
+
+function inspectProductStoryboard(shots: ShotItem[]) {
+  const issues = shots.flatMap((shot) => validateProductShot(shot).map((field) => `#${shot.shot_number} ${field}`));
+  const sequenceIssues = shots
+    .map((shot, index) => (shot.shot_number === index + 1 ? "" : `#${shot.shot_number} 编号不连续`))
+    .filter(Boolean);
+  const allIssues = [...sequenceIssues, ...issues];
+  const totalDuration = shots.reduce((sum, item) => sum + item.duration_seconds, 0);
+  const summary = shots.length
+    ? allIssues.length
+      ? `产品级分镜检验：${shots.length} 个镜头，总时长 ${totalDuration}s，发现 ${allIssues.length} 个字段/编号待补齐：${allIssues.slice(0, 6).join("、")}${allIssues.length > 6 ? "..." : ""}`
+      : `产品级分镜检验：${shots.length} 个镜头，总时长 ${totalDuration}s，字段完整，可进入提词、生图、视频和音频字幕。`
+    : "产品级分镜检验：暂无镜头，请先自动拆镜或新增镜头。";
+
+  return { missingCount: allIssues.length, summary, issues: allIssues };
+}
+
+function buildStoryboardPreview(shots: ShotItem[]) {
+  return inspectProductStoryboard(shots).summary;
+}
+
+function firstProductionText(...values: Array<string | undefined>) {
+  return values.find((value) => hasProductionValue(value))?.trim() ?? "";
+}
+
+function joinProductionText(values: Array<string | undefined>, separator = "；") {
+  return values.filter((value): value is string => hasProductionValue(value)).join(separator);
+}
+
+function inferLensFromShotSize(shotSize: string) {
+  if (/全景|远景|大远景/.test(shotSize)) return "广角视角，优先交代空间关系";
+  if (/特写|近景|细节/.test(shotSize)) return "中长焦或近距视角，突出表情/关键物";
+  if (/中景/.test(shotSize)) return "35mm-50mm 标准视角，兼顾人物和环境";
+  return "";
+}
+
+function enrichShotProductionFields(shot: ShotItem): ShotItem {
+  const characterText = shot.characters.filter(Boolean).join("、") || "本镜头无明确角色";
+  const propText = shot.props.filter(Boolean).join("、") || "本镜头无明确道具";
+  const assetRequirements = `场景：${shot.scene || "未指定"}；角色：${characterText}；道具：${propText}`;
+  const cameraText = joinProductionText([shot.shot_size, shot.camera_angle, shot.composition, shot.camera_motion || shot.movement]);
+  const dialogueOrSound = firstProductionText(shot.dialogue ? `对白/旁白：${shot.dialogue}` : "", shot.scene ? `${shot.scene} 环境底噪，音效跟随主要动作` : "");
+
+  return {
+    ...shot,
+    story_beat: firstProductionText(shot.story_beat, shot.purpose, shot.rhythm),
+    visual_description: firstProductionText(shot.visual_description, joinProductionText([shot.scene, shot.composition, shot.shot_size, shot.camera_angle])),
+    action: firstProductionText(shot.action, shot.purpose, shot.dialogue),
+    blocking: firstProductionText(
+      shot.blocking,
+      shot.composition,
+      shot.characters.length ? `${characterText} 按构图站位，围绕 ${shot.scene || "当前场景"} 调度` : ""
+    ),
+    lens: firstProductionText(shot.lens, inferLensFromShotSize(shot.shot_size)),
+    camera_motion: firstProductionText(shot.camera_motion, shot.movement),
+    lighting: firstProductionText(shot.lighting, shot.scene ? `${shot.scene} 的既有光源与氛围照明` : ""),
+    color_mood: firstProductionText(shot.color_mood, shot.purpose),
+    sound_design: firstProductionText(shot.sound_design, dialogueOrSound),
+    transition: firstProductionText(shot.transition, "硬切，保持镜头顺序连续"),
+    continuity_notes: firstProductionText(shot.continuity_notes, `${assetRequirements}；保持与前后镜头一致`),
+    asset_requirements: firstProductionText(shot.asset_requirements, assetRequirements),
+    generation_notes: firstProductionText(
+      shot.generation_notes,
+      `${assetRequirements}；${cameraText || "按当前分镜执行"}；不在画面中生成字幕或无关文字`
+    ),
+    vfx_notes: firstProductionText(shot.vfx_notes, "无特殊后期"),
+    risk_flags: firstProductionText(shot.risk_flags, "自动回填字段需在生成前复核角色、场景、道具一致性"),
+  };
 }
 
 const stepTwoTaskIds: Record<string, string> = {
@@ -2829,7 +3059,7 @@ function StepOneSection({
       const partials: string[] = [];
       for (let index = 0; index < chunks.length; index += 1) {
         setStatusMessage(`AI 正在生成第 ${index + 1}/${chunks.length} 段季纲...`);
-        const result = await generateStepOneOutline(form.project_name || project.name, chunks[index]);
+        const result = await generateStepOneOutline(form.project_name || project.name, chunks[index], { project_id: project.id });
         partials.push(result.content);
       }
       setIsDirty(true);
@@ -2932,7 +3162,7 @@ function StepOneSection({
     setFoundationGenerating("world");
     setStatusMessage("AI 正在生成世界观草稿...");
     try {
-      const result = await generateStepOneTask(form.project_name || project.name, buildFoundationPrompt("世界观编辑"), "S01_WORLDVIEW");
+      const result = await generateStepOneTask(form.project_name || project.name, buildFoundationPrompt("世界观编辑"), "S01_WORLDVIEW", { project_id: project.id });
       const parsed = parseStepOneFoundationResult(result.content);
       if (!parsed.formatted) {
         setStatusMessage("AI 返回格式异常，未写入世界观字段，请重新生成。");
@@ -2959,7 +3189,7 @@ function StepOneSection({
     setFoundationGenerating("mainline");
     setStatusMessage("AI 正在生成主线目标草稿...");
     try {
-      const result = await generateStepOneTask(form.project_name || project.name, buildFoundationPrompt("主线目标"), "S01_MAIN_CONFLICT");
+      const result = await generateStepOneTask(form.project_name || project.name, buildFoundationPrompt("主线目标"), "S01_MAIN_CONFLICT", { project_id: project.id });
       const parsed = parseStepOneFoundationResult(result.content);
       if (!parsed.formatted) {
         setStatusMessage("AI 返回格式异常，未写入主线字段，请重新生成。");
@@ -2986,7 +3216,7 @@ function StepOneSection({
     setFoundationGenerating("relationships");
     setStatusMessage("AI 正在生成人物关系草稿...");
     try {
-      const result = await generateStepOneTask(form.project_name || project.name, buildFoundationPrompt("人物关系"), "S01_RELATIONSHIPS");
+      const result = await generateStepOneTask(form.project_name || project.name, buildFoundationPrompt("人物关系"), "S01_RELATIONSHIPS", { project_id: project.id });
       const parsed = parseStepOneFoundationResult(result.content);
       if (!parsed.formatted) {
         setStatusMessage("AI 返回格式异常，未写入人物关系字段，请重新生成。");
@@ -3014,7 +3244,8 @@ function StepOneSection({
       const result = await generateProjectTextTask(
         project.name,
         "S01_CONTINUITY_CHECK",
-        JSON.stringify({ season_outline: form.season_outline, episodes: form.episodes }, null, 2)
+        JSON.stringify({ season_outline: form.season_outline, episodes: form.episodes }, null, 2),
+        { projectId: project.id }
       );
       const parsed = firstJsonObject(result.content);
       const issues = listValue(parsed.issues).map((item, index) => {
@@ -3473,7 +3704,8 @@ function StepTwoSection({
           "4. 不改写剧情事实、人物称谓、台词含义和段落顺序。",
           "待标注剧本文本：",
           form.script_text,
-        ].join("\n")
+        ].join("\n"),
+        { projectId: project.id, targetType: "script" }
       );
       const parsed = firstJsonObject(result.content);
       const markedScript = textValue(parsed.marked_script || parsed.script_text || parsed.marked_text, result.content);
@@ -3552,7 +3784,8 @@ function StepTwoSection({
           `改写要求：${form.rewrite_tool.rewrite_prompt || "增强节奏、保留剧情事实"}`,
           "待改写文本：",
           selectedText,
-        ].join("\n")
+        ].join("\n"),
+        { projectId: project.id, targetType: target }
       );
       const parsed = firstJsonObject(result.content);
       const rewritten = textValue(parsed.rewritten_text) || result.content;
@@ -3593,7 +3826,12 @@ function StepTwoSection({
       for (let index = 0; index < chunks.length; index += 1) {
         const chunk = chunks[index];
         setStatusMessage(`AI 正在处理第 ${index + 1}/${chunks.length} 段...`);
-        const result = await generateProjectTextTask(project.name, stepTwoTaskIds[mode] ?? "S02_SCRIPT", `${chunk.label}\n${chunk.content}`);
+        const result = await generateProjectTextTask(
+          project.name,
+          stepTwoTaskIds[mode] ?? "S02_SCRIPT",
+          `${chunk.label}\n${chunk.content}`,
+          { projectId: project.id, targetType: mode }
+        );
         partials.push(result.content);
       }
       const output = formatGeneratedStepTwoOutput(mode, mergeChunkResults(partials));
@@ -4177,7 +4415,12 @@ function StepThreeSection({
     setAiAction("extract-assets");
     setStatusMessage?.("AI 正在从角色、术语和剧本中提取资产卡片...");
     try {
-      const result = await generateProjectTextTask(project.name, "S03_ASSET_EXTRACT", buildCharacterCardPrompt(project.name, source));
+      const result = await generateProjectTextTask(
+        project.name,
+        "S03_ASSET_EXTRACT",
+        buildCharacterCardPrompt(project.name, source),
+        { projectId: project.id, targetType: "assets" }
+      );
       const parsed = firstJsonObject(result.content);
       const typedRecords = (value: unknown, category: "character" | "scene" | "prop") =>
         listValue(value).flatMap((item): Record<string, unknown>[] =>
@@ -4380,9 +4623,9 @@ function StepThreeSection({
       "角色关系：",
       project.step_one.relationship_notes,
       "剧本/正文/素材：",
-      project.step_two.script_text || project.step_two.novel_text || project.step_two.source_material,
+      limitTextForAi(project.step_two.script_text || project.step_two.novel_text || project.step_two.source_material, 20000),
       "现有资产库：",
-      JSON.stringify(assetLibrary, null, 2),
+      JSON.stringify(summarizeAssetLibraryForAi(assetLibrary), null, 2),
     ].join("\n");
   }
 
@@ -4402,7 +4645,12 @@ function StepThreeSection({
     setStatusMessage?.(`AI 正在生成${labelMap[kind]}...`);
     try {
       const sourceText = getAssetSourceText();
-      const result = await generateProjectTextTask(project.name, taskMap[kind], kind === "character" ? buildCharacterCardPrompt(project.name, sourceText) : sourceText);
+      const result = await generateProjectTextTask(
+        project.name,
+        taskMap[kind],
+        kind === "character" ? buildCharacterCardPrompt(project.name, sourceText) : sourceText,
+        { projectId: project.id, targetType: kind }
+      );
       const parsed = firstJsonObject(result.content);
       const records = listValue(
         kind === "character"
@@ -4491,10 +4739,11 @@ function StepThreeSection({
           : [
               "请只补全这个用户手动新建或编辑过的单个资产卡，不要批量生成新资产。",
               "已有资产卡：",
-              JSON.stringify(currentAsset, null, 2),
+              JSON.stringify(summarizeAssetCardForAi(kind, currentAsset), null, 2),
               "上游来源：",
               getAssetSourceText(),
-            ].join("\n")
+            ].join("\n"),
+        { projectId: project.id, targetType: kind, targetId: id }
       );
       const parsed = firstJsonObject(result.content);
       const records = listValue(
@@ -4625,7 +4874,12 @@ function StepThreeSection({
     setAiAction(`generate-${kind}`);
     setStatusMessage?.(`AI 正在生成${label}...`);
     try {
-      const result = await generateProjectTextTask(project.name, taskId, getAssetSourceText());
+      const result = await generateProjectTextTask(
+        project.name,
+        taskId,
+        getAssetSourceText(),
+        { projectId: project.id, targetType: kind }
+      );
       const parsed = firstJsonObject(result.content);
       const content =
         kind === "style"
@@ -4997,6 +5251,16 @@ function StepFourSection({
 
   useEffect(() => setForm(project.step_four), [project.step_four]);
 
+  const storyboardInspection = useMemo(() => inspectProductStoryboard(form.shots), [form.shots]);
+
+  function shotRecordText(record: Record<string, unknown>, keys: string[], fallback = "") {
+    for (const key of keys) {
+      const value = textValue(record[key]);
+      if (value) return value;
+    }
+    return fallback;
+  }
+
   async function generateShots() {
     if (storyboardGenerating) return;
     const episode = project.step_one.episodes.find((item) => item.episode_number === form.selected_episode_number) ?? project.step_one.episodes[0];
@@ -5010,18 +5274,21 @@ function StepFourSection({
           `目标集数：第 ${episode?.episode_number ?? form.selected_episode_number} 集`,
           `单集大纲：${episode?.content || "未填写"}`,
           `结尾钩子：${episode?.hook || "未填写"}`,
+          "分镜要求：每个镜头都必须是产品级生产表，包含剧情目的、故事节拍、画面描述、动作、走位调度、景别、机位、构图、镜头焦段或运动、声音/对白、转场/连续性、资产绑定、生成硬约束和风险点。",
+          directorGrammarGuide,
           "剧本：",
           project.step_two.script_text || project.step_two.novel_text || "未填写",
           "资产库：",
           JSON.stringify(project.step_three, null, 2),
-        ].join("\n")
+        ].join("\n"),
+        { projectId: project.id, targetType: "episode", targetId: String(episode?.episode_number ?? form.selected_episode_number) }
       );
       const parsed = firstJsonObject(result.content);
       const shots = listValue(parsed.shots)
         .flatMap((item, index): ShotItem[] => {
           if (!item || typeof item !== "object") return [];
           const record = item as Record<string, unknown>;
-          return [{
+          return [enrichShotProductionFields({
             id: textValue(record.shot_id) || `shot-ai-${Date.now()}-${index}`,
             episode_number: numberValue(record.episode_number, episode?.episode_number ?? form.selected_episode_number),
             shot_number: numberValue(record.shot_number, index + 1),
@@ -5029,15 +5296,30 @@ function StepFourSection({
             characters: splitTextLines(record.characters),
             props: splitTextLines(record.props),
             purpose: textValue(record.purpose, "推进剧情"),
+            story_beat: shotRecordText(record, ["story_beat", "beat", "emotion_beat", "dramatic_beat"], "待确认：故事节拍"),
+            visual_description: shotRecordText(record, ["visual_description", "visual", "description", "image_description", "frame_description"], "待确认：画面主体"),
+            action: shotRecordText(record, ["action", "character_action", "event_action", "movement_action"], "待确认：动作"),
+            blocking: shotRecordText(record, ["blocking", "staging", "positioning", "character_blocking"], "待确认：调度"),
             duration_seconds: Math.max(1, Math.round(numberValue(record.duration_seconds, 6))),
             shot_size: textValue(record.shot_size, "中景"),
             camera_angle: textValue(record.camera_angle, "平视"),
             composition: textValue(record.composition, "主体清晰，构图稳定。"),
+            lens: shotRecordText(record, ["lens", "focal_length", "view_lens"], "待确认：镜头焦段"),
             movement: textValue(record.movement, "定镜"),
+            camera_motion: shotRecordText(record, ["camera_motion", "camera_movement", "motion_detail"], textValue(record.movement, "定镜")),
+            lighting: shotRecordText(record, ["lighting", "light", "lighting_design"], "待确认：光线"),
+            color_mood: shotRecordText(record, ["color_mood", "color", "tone", "mood"], "待确认：色彩情绪"),
             dialogue: textValue(record.dialogue),
+            sound_design: shotRecordText(record, ["sound_design", "sound", "audio", "sfx", "music"], "待确认：声音设计"),
             rhythm: textValue(record.rhythm, "信息推进"),
+            transition: shotRecordText(record, ["transition", "cut", "in_out"], "硬切或待确认"),
+            continuity_notes: shotRecordText(record, ["continuity_notes", "continuity", "continuity_note"], "待确认：连续性"),
+            asset_requirements: shotRecordText(record, ["asset_requirements", "asset_binding", "assets", "source_asset_ids"], "待确认：资产绑定"),
+            generation_notes: shotRecordText(record, ["generation_notes", "generation_constraints", "prompt_constraints", "production_notes"], "待确认：生成硬约束"),
+            vfx_notes: shotRecordText(record, ["vfx_notes", "vfx", "post_notes"], "无特殊后期"),
+            risk_flags: shotRecordText(record, ["risk_flags", "risk_notes", "risks"], "待确认：生成风险"),
             status: "ready" as const,
-          }];
+          })];
         });
       if (!shots.length) {
         setStatusMessage("AI 返回格式异常，未生成镜头。");
@@ -5046,10 +5328,11 @@ function StepFourSection({
       setForm({
         ...form,
         shots,
-        task_preview: `AI 已生成 ${shots.length} 个镜头任务，可进入提词生成。`,
+        task_preview: buildStoryboardPreview(shots),
         total_duration_seconds: shots.reduce((sum, item) => sum + item.duration_seconds, 0),
       });
-      setStatusMessage(`AI 已完成 ${shots.length} 个镜头拆分。`);
+      const inspection = inspectProductStoryboard(shots);
+      setStatusMessage(inspection.missingCount ? `AI 已完成 ${shots.length} 个镜头拆分，仍有 ${inspection.missingCount} 个产品级字段需要补齐。` : `AI 已完成 ${shots.length} 个产品级镜头拆分。`);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "AI 拆镜失败");
     } finally {
@@ -5070,13 +5353,28 @@ function StepFourSection({
           characters: ["主角"],
           props: [],
           purpose: "补充镜头",
+          story_beat: "待确认：故事节拍",
+          visual_description: "待确认：画面主体与可见信息",
+          action: "待确认：角色动作",
+          blocking: "待确认：走位与站位",
           duration_seconds: 6,
           shot_size: "中景",
           camera_angle: "平视",
           composition: "待补充构图站位",
+          lens: "待确认：镜头焦段",
           movement: "定镜",
+          camera_motion: "定镜",
+          lighting: "待确认：光线",
+          color_mood: "待确认：色彩情绪",
           dialogue: "",
+          sound_design: "待确认：声音设计",
           rhythm: "草稿",
+          transition: "硬切或待确认",
+          continuity_notes: "待确认：前后镜头连续性",
+          asset_requirements: "待确认：角色/场景/道具绑定",
+          generation_notes: "待确认：图片/视频生成硬约束",
+          vfx_notes: "无特殊后期",
+          risk_flags: "待确认：生成风险",
           status: "draft",
         },
       ],
@@ -5104,12 +5402,16 @@ function StepFourSection({
   async function handleSave() {
     setSaving(true);
     try {
+      const enrichedShots = form.shots.map(enrichShotProductionFields);
+      const inspection = inspectProductStoryboard(enrichedShots);
       const nextForm = {
         ...form,
-        total_duration_seconds: form.shots.reduce((sum, item) => sum + item.duration_seconds, 0),
+        shots: enrichedShots,
+        task_preview: form.task_preview || inspection.summary,
+        total_duration_seconds: enrichedShots.reduce((sum, item) => sum + item.duration_seconds, 0),
       };
       const saved = await saveStepFour(project.id, nextForm);
-      onSaved(saved, "步骤四分镜规划已保存");
+      onSaved(saved, inspection.missingCount ? `步骤四已保存，仍有 ${inspection.missingCount} 个产品级字段待补齐` : "步骤四产品级分镜已保存");
     } finally {
       setSaving(false);
     }
@@ -5138,13 +5440,20 @@ function StepFourSection({
         <button className="ghost-button inline-button" type="button" onClick={addShot}>新增镜头</button>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存分镜"}</button>
       </div>
+      <div className="hint-text">{storyboardInspection.summary}</div>
       <div className="shot-table-grid">
         {form.shots.map((shot) => (
           <article className="panel-card shot-card" key={shot.id}>
             <strong>#{shot.shot_number} {shot.scene}</strong>
             <span>{shot.shot_size} / {shot.camera_angle} / {shot.movement} / {shot.duration_seconds}s</span>
             <p>{shot.purpose}</p>
+            <p>{shot.story_beat || "故事节拍待补充"} · {shot.visual_description || "画面描述待补充"}</p>
+            <small>动作：{shot.action || "待补充"} · 调度：{shot.blocking || "待补充"}</small>
+            <small>摄影：{shot.composition || "待补充构图"} · {shot.lens || "焦段待补充"} · {shot.camera_motion || shot.movement || "运镜待补充"}</small>
+            <small>声音：{shot.dialogue || shot.sound_design || "待补充"} · 转场：{shot.transition || "待补充"}</small>
+            <small>资产绑定：{shot.asset_requirements || "待补充"} · 生成约束：{shot.generation_notes || "待补充"}</small>
             <small>角色：{shot.characters.join("、") || "待选"} · 道具：{shot.props.join("、") || "无"}</small>
+            {validateProductShot(shot).length ? <small>待补齐：{validateProductShot(shot).join("、")}</small> : <small>产品级字段完整</small>}
             <button className="ghost-mini-button" type="button" onClick={() => removeShot(shot.id)}>
               删除镜头
             </button>
@@ -5188,19 +5497,39 @@ function StepFiveSection({
       const prompts: PromptItem[] = [];
       for (let index = 0; index < targets.length; index += 1) {
         const shot = targets[index];
-        const result = await generateProjectTextTask(
-          project.name,
-          mode === "t2i" ? "S05_T2I_PROMPT" : "S05_I2V_PROMPT",
-          [
+        const taskId = mode === "t2i" ? "S05_T2I_PROMPT" : "S05_I2V_PROMPT";
+        const basePrompt = [
             "镜头：",
             JSON.stringify(shot, null, 2),
             "资产与一致性规则：",
             JSON.stringify(project.step_three, null, 2),
+            "语言约束：用于图片/视频模型的提示词字段必须统一使用英文，包括正向提示词、负面词、参数和锁定词；不得中英混写。中文角色名、场景名、道具名请转写为稳定英文名或拼音，并在同一项目内保持一致。UI说明类字段可继续中文。",
+            "视线与道具朝向约束：如果镜头中角色正在阅读、查看、拍摄或检查笔记、报告、照片、手机、档案等信息载体，画面必须遵循角色视线逻辑。信息载体应朝向角色，镜头可使用角色肩后、侧后、主观视角或斜侧可读构图；不得让页面/屏幕像展示牌一样正面朝观众、同时角色却在旁边观看。请在正向英文提示词中加入 over-the-shoulder view / POV from the character / page angled toward the character / screen facing the character 等约束，并在负面词中排除 front-facing document to viewer / display board composition / prop presented to audience / contradictory eyeline。",
+            directorGrammarGuide,
             `负面词模板：${form.negative_template}`,
             `参数模板：${form.parameter_template}`,
-          ].join("\n")
+        ].join("\n");
+        let result = await generateProjectTextTask(
+          project.name,
+          taskId,
+          basePrompt,
+          { projectId: project.id, targetType: "shot", targetId: shot.id }
         );
-        const parsed = parseStrictJsonOutput(result.content);
+        let parsed = parseStrictJsonOutput(result.content);
+        if (modelPromptFieldsContainCjk(parsed, mode)) {
+          result = await generateProjectTextTask(
+            project.name,
+            taskId,
+            [
+              basePrompt,
+              "上一版输出不合格：模型提示词字段检测到中文或中文标点。请重新输出合法 JSON，并将所有用于图片/视频模型的提示词字段改为纯英文，不要夹杂中文。",
+              "上一版输出：",
+              result.content,
+            ].join("\n"),
+            { projectId: project.id, targetType: "shot", targetId: shot.id }
+          );
+          parsed = parseStrictJsonOutput(result.content);
+        }
         const positivePrompt = textValue(parsed.positive_prompt) || textValue(parsed.full_prompt);
         const motionPrompt = textValue(parsed.full_prompt) || textValue(parsed.motion_prompt);
         prompts.push({
@@ -5344,6 +5673,7 @@ function StepSixSection({
           prompt: result.prompt,
           status: index === 0 ? "first-frame" as const : "candidate" as const,
           metadata: `${result.provider} / ${result.model}；${result.metadata || prompt.parameters}`,
+          repaint_instruction: "",
           repaint_prompt: "",
         });
       }
@@ -5384,6 +5714,7 @@ function StepSixSection({
         prompt: result.prompt,
         status: "candidate",
         metadata: `${result.provider} / ${result.model}；重新生成版本`,
+        repaint_instruction: form.repaint_prompt,
         repaint_prompt: form.repaint_prompt,
       };
       setForm((current) => ({ ...current, candidates: [...current.candidates, candidate] }));
@@ -5399,31 +5730,86 @@ function StepSixSection({
     if (imageGenerationAction) return;
     const image = form.candidates.find((item) => item.id === imageId);
     if (!image) return;
-    setImageGenerationAction(`repaint:${imageId}`);
-    setStatusMessage("AI 正在生成局部重绘提示词...");
+    const promptRecord = project.step_five.prompts.find((item) => item.shot_id === image.shot_id);
+    const shot = project.step_four.shots.find((item) => item.id === image.shot_id);
+    const userInstruction = (image.repaint_instruction || form.repaint_prompt || form.repaint_mask_note).trim();
+    if (!userInstruction) {
+      setStatusMessage("请先在该候选图下填写修改意见，再执行 AI 改词并重绘。");
+      return;
+    }
+    setImageGenerationAction(`repaint-prompt:${imageId}`);
+    setStatusMessage("AI 正在按修改意见修订完整生图提示词...");
     try {
       const result = await generateProjectTextTask(
         project.name,
         "S06_REPAINT_PROMPT",
-        JSON.stringify({ image, repaint_mask_note: form.repaint_mask_note, repaint_prompt: form.repaint_prompt }, null, 2)
+        [
+          directorGrammarGuide,
+          "用户修改意见必须先转化为完整、可直接提交给 gpt-image-2 的英文 T2I 提示词，再进行画面重绘。",
+          "不要只输出局部短语；请保留原镜头角色、场景、服装、风格、镜头语言和连续性，仅修复用户指出的问题。",
+          "若用户指出角色视线/道具朝向/画面结构割裂，必须显式加入 over-the-shoulder view、POV from the character、page angled toward the character、not front-facing to viewer 等约束，并在 negative_prompt 排除 front-facing document to viewer、display board composition、prop presented to audience、contradictory eyeline。",
+          JSON.stringify({
+            shot,
+            image,
+            original_prompt: image.prompt,
+            step_five_prompt: promptRecord,
+            user_revision_instruction: userInstruction,
+            repaint_mask_note: form.repaint_mask_note,
+          }, null, 2),
+        ].join("\n"),
+        { projectId: project.id, targetType: "image", targetId: image.id }
       );
       const parsed = parseStrictJsonOutput(result.content);
-      const repaintPrompt = textValue(parsed.repaint_prompt, result.content);
+      const revisedPrompt = textValue(parsed.repaint_prompt || parsed.prompt || parsed.positive_prompt, result.content);
+      const negativePrompt = textValue(parsed.negative_prompt);
+      const fullPrompt = [revisedPrompt, negativePrompt ? `Negative prompt: ${negativePrompt}` : ""].filter(Boolean).join("\n");
       setForm((current) => ({
         ...current,
         candidates: current.candidates.map((item) =>
           item.id === imageId
-            ? { ...item, metadata: `${item.metadata}；AI局部重绘提示已生成`, repaint_prompt: repaintPrompt }
+            ? {
+                ...item,
+                metadata: `${item.metadata}；AI已按修改意见修订重绘提示词`,
+                repaint_instruction: userInstruction,
+                repaint_prompt: fullPrompt,
+              }
             : item
         ),
-        repaint_prompt: repaintPrompt,
+        repaint_prompt: fullPrompt,
       }));
-      setStatusMessage("AI 局部重绘提示词已写入候选图。");
+
+      setImageGenerationAction(`repaint-image:${imageId}`);
+      setStatusMessage("gpt-image-2 正在根据修订提示词重绘新候选图...");
+      const imageResult = await generateImageCandidate({
+        prompt: fullPrompt,
+        shot_id: image.shot_id,
+        shot_label: image.shot_label,
+      });
+      const candidate: ImageCandidate = {
+        id: `img-repaint-${image.id}-${Date.now()}`,
+        shot_id: image.shot_id,
+        shot_label: image.shot_label,
+        url: imageResult.url,
+        prompt: fullPrompt,
+        status: "candidate",
+        metadata: `${imageResult.provider} / ${imageResult.model}；按用户修改意见重绘；来源 ${image.id}`,
+        repaint_instruction: userInstruction,
+        repaint_prompt: fullPrompt,
+      };
+      setForm((current) => ({ ...current, candidates: [...current.candidates, candidate] }));
+      setStatusMessage("已完成 AI 改词并重绘，新候选图已追加，原图未覆盖。");
     } catch (err) {
-      setStatusMessage(err instanceof Error ? err.message : "AI 局部重绘提示生成失败");
+      setStatusMessage(err instanceof Error ? err.message : "AI 改词并重绘失败");
     } finally {
       setImageGenerationAction(null);
     }
+  }
+
+  function updateCandidateRepaintInstruction(imageId: string, value: string) {
+    setForm((current) => ({
+      ...current,
+      candidates: current.candidates.map((item) => (item.id === imageId ? { ...item, repaint_instruction: value } : item)),
+    }));
   }
 
   function validateSelectedPackage() {
@@ -5479,8 +5865,8 @@ function StepSixSection({
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存候选图"}</button>
       </div>
       <div className="field-row compact-row">
-        <label className="field-label"><span>局部重绘蒙版说明</span><input value={form.repaint_mask_note} onChange={(event) => setForm({ ...form, repaint_mask_note: event.target.value })} placeholder="例如：只修复手部和袖口" /></label>
-        <label className="field-label"><span>局部重绘指令</span><input value={form.repaint_prompt} onChange={(event) => setForm({ ...form, repaint_prompt: event.target.value })} placeholder="例如：保持角色脸型，仅修复手指畸形" /></label>
+        <label className="field-label"><span>重绘范围/结构问题</span><input value={form.repaint_mask_note} onChange={(event) => setForm({ ...form, repaint_mask_note: event.target.value })} placeholder="例如：画面结构割裂，笔记页面朝向观众而不是角色" /></label>
+        <label className="field-label"><span>默认修改意见</span><input value={form.repaint_prompt} onChange={(event) => setForm({ ...form, repaint_prompt: event.target.value })} placeholder="例如：改为角色肩后视角，笔记朝向角色，观众只能斜侧看到页面" /></label>
       </div>
       {form.validation_report ? <div className="hint-text">{form.validation_report}</div> : null}
       <div className="image-candidate-grid">
@@ -5489,6 +5875,16 @@ function StepSixSection({
             <img src={image.url} alt={image.shot_label} />
             <strong>{image.shot_label} · {image.status}</strong>
             <p>{image.metadata}</p>
+            {image.repaint_prompt ? <small>重绘提示词：{image.repaint_prompt}</small> : null}
+            <label className="field-label repaint-field">
+              <span>这张图的修改意见</span>
+              <textarea
+                rows={3}
+                value={image.repaint_instruction}
+                onChange={(event) => updateCandidateRepaintInstruction(image.id, event.target.value)}
+                placeholder="例如：角色在看笔记时，笔记不能正面展示给观众；改成肩后/主观视角，页面朝向角色，保持角色、服装、档案馆和冷色电影感。"
+              />
+            </label>
             <div className="action-row">
               <button className="ghost-mini-button" type="button" onClick={() => markImageStatus(image, "first-frame", "首帧")}>首帧</button>
               <button className="ghost-mini-button" type="button" onClick={() => markImageStatus(image, "keyframe", "关键帧")}>关键帧</button>
@@ -5503,7 +5899,15 @@ function StepSixSection({
               >
                 重生成
               </AIActionButton>
-              <AIActionButton className="ghost-mini-button" isGenerating={imageGenerationAction === `repaint:${image.id}`} disabled={Boolean(imageGenerationAction)} loadingLabel="生成中" onClick={() => void applyRepaint(image.id)}>局部重绘</AIActionButton>
+              <AIActionButton
+                className="ghost-mini-button"
+                isGenerating={imageGenerationAction === `repaint-prompt:${image.id}` || imageGenerationAction === `repaint-image:${image.id}`}
+                disabled={Boolean(imageGenerationAction)}
+                loadingLabel={imageGenerationAction === `repaint-prompt:${image.id}` ? "AI改词中" : "重绘生成中"}
+                onClick={() => void applyRepaint(image.id)}
+              >
+                AI改词并重绘
+              </AIActionButton>
               <button className="ghost-mini-button" type="button" onClick={() => void copyTextToClipboard(image.prompt, "图片提示词已复制", setStatusMessage)}>复制词</button>
             </div>
           </article>
@@ -5551,7 +5955,8 @@ function StepSevenSection({
             JSON.stringify(project.step_four.shots.find((shot) => shot.id === image.shot_id) ?? {}, null, 2),
             "资产规则：",
             JSON.stringify(project.step_three, null, 2),
-          ].join("\n")
+          ].join("\n"),
+          { projectId: project.id, targetType: "image", targetId: image.id }
         );
         const parsed = firstJsonObject(result.content);
         const issues = listValue(parsed.issues);
@@ -5721,15 +6126,20 @@ function StepEightSection({
         const taskResult = await generateProjectTextTask(
           project.name,
           "S08_VIDEO_TASK",
-          JSON.stringify({
-            shot,
-            image,
-            i2v_prompt: promptRecord?.i2v_prompt,
-            negative_prompt: promptRecord?.negative_prompt,
-            motion_settings: form.motion_settings,
-            reference_bindings: form.reference_bindings,
-            qc_reports: project.step_seven.reports.filter((report) => report.asset_id === image.id),
-          }, null, 2)
+          [
+            directorGrammarGuide,
+            "视频生成导演约束：继承分镜和 I2V 提示词里的导演意图，明确镜头运动为什么发生、如何承接角色视线、如何揭示信息、如何推进情绪；输出给视频模型的 prompt 和 negative_prompt 必须使用英文。",
+            JSON.stringify({
+              shot,
+              image,
+              i2v_prompt: promptRecord?.i2v_prompt,
+              negative_prompt: promptRecord?.negative_prompt,
+              motion_settings: form.motion_settings,
+              reference_bindings: form.reference_bindings,
+              qc_reports: project.step_seven.reports.filter((report) => report.asset_id === image.id),
+            }, null, 2),
+          ].join("\n"),
+          { projectId: project.id, targetType: "image", targetId: image.id }
         );
         const taskPayload = firstJsonObject(taskResult.content);
         const motionPrompt = textValue(taskPayload.prompt, `${form.motion_settings}；${promptRecord?.i2v_prompt || image.prompt}`);
@@ -5946,7 +6356,8 @@ function StepNineSection({
           project.step_two.script_text || project.step_two.novel_text,
           "分镜：",
           JSON.stringify(project.step_four.shots, null, 2),
-        ].join("\n")
+        ].join("\n"),
+        { projectId: project.id, targetType: "dialogue" }
       );
       const parsed = parseStrictJsonOutput(result.content);
       const lines = listValue(parsed.dialogue_lines)
@@ -5987,7 +6398,8 @@ function StepNineSection({
       const result = await generateProjectTextTask(
         project.name,
         "S09_VOICE_PROFILE",
-        JSON.stringify({ includeNarration, dialogue_lines: form.dialogue_lines, characters: project.step_three.characters }, null, 2)
+        JSON.stringify({ includeNarration, dialogue_lines: form.dialogue_lines, characters: project.step_three.characters }, null, 2),
+        { projectId: project.id, targetType: includeNarration ? "narration" : "voice" }
       );
       const parsed = firstJsonObject(result.content);
       const profiles = listValue(parsed.voice_profiles)
@@ -6025,7 +6437,8 @@ function StepNineSection({
       const result = await generateProjectTextTask(
         project.name,
         "S09_SUBTITLE_TIMELINE",
-        JSON.stringify({ dialogue_lines: form.dialogue_lines, clips: project.step_eight.clips, subtitle_style: form.subtitle_style }, null, 2)
+        JSON.stringify({ dialogue_lines: form.dialogue_lines, clips: project.step_eight.clips, subtitle_style: form.subtitle_style }, null, 2),
+        { projectId: project.id, targetType: "subtitle" }
       );
       const parsed = firstJsonObject(result.content);
       const cues = listValue(parsed.subtitle_cues)
@@ -6058,7 +6471,8 @@ function StepNineSection({
       const result = await generateProjectTextTask(
         project.name,
         "S09_SOUND_EFFECTS",
-        JSON.stringify({ shots: project.step_four.shots, dialogue_lines: form.dialogue_lines, clips: project.step_eight.clips }, null, 2)
+        JSON.stringify({ shots: project.step_four.shots, dialogue_lines: form.dialogue_lines, clips: project.step_eight.clips }, null, 2),
+        { projectId: project.id, targetType: "sound" }
       );
       const parsed = firstJsonObject(result.content);
       const soundEffects = listValue(parsed.sound_effects)
@@ -6170,7 +6584,8 @@ function StepTenSection({
       const result = await generateProjectTextTask(
         project.name,
         "S10_TIMELINE",
-        JSON.stringify({ videos: project.step_eight.clips, audio_subtitle: project.step_nine, transition_settings: form.transition_settings }, null, 2)
+        JSON.stringify({ videos: project.step_eight.clips, audio_subtitle: project.step_nine, transition_settings: form.transition_settings }, null, 2),
+        { projectId: project.id, targetType: "timeline" }
       );
       const parsed = firstJsonObject(result.content);
       const timelineClips = listValue(parsed.timeline_clips)
@@ -6215,7 +6630,8 @@ function StepTenSection({
       const result = await generateProjectTextTask(
         project.name,
         "S10_EDIT_QC",
-        JSON.stringify({ timeline_clips: form.timeline_clips, subtitles: project.step_nine.subtitle_cues, videos: project.step_eight.clips }, null, 2)
+        JSON.stringify({ timeline_clips: form.timeline_clips, subtitles: project.step_nine.subtitle_cues, videos: project.step_eight.clips }, null, 2),
+        { projectId: project.id, targetType: "timeline" }
       );
       const parsed = firstJsonObject(result.content);
       const report = textValue(parsed.edit_qc_report, result.content);
@@ -6243,7 +6659,8 @@ function StepTenSection({
       const result = await generateProjectTextTask(
         project.name,
         "S10_COVER_TITLE",
-        JSON.stringify({ source_image: source, story: project.step_one, script: project.step_two.script_text }, null, 2)
+        JSON.stringify({ source_image: source, story: project.step_one, script: project.step_two.script_text }, null, 2),
+        { projectId: project.id, targetType: "cover", targetId: source?.id }
       );
       const parsed = firstJsonObject(result.content);
       const rawCover = listValue(parsed.cover_candidates)[0];
@@ -6360,7 +6777,8 @@ function StepElevenSection({
       const result = await generateProjectTextTask(
         project.name,
         "S11_PUBLISH_COPY",
-        JSON.stringify({ cover, story: project.step_one, script: project.step_two.script_text, package: project.step_ten }, null, 2)
+        JSON.stringify({ cover, story: project.step_one, script: project.step_two.script_text, package: project.step_ten }, null, 2),
+        { projectId: project.id, targetType: "publish_copy" }
       );
       const parsed = firstJsonObject(result.content);
       const copy = textValue(parsed.publish_copy) ||
@@ -6409,7 +6827,8 @@ function StepElevenSection({
       const result = await generateProjectTextTask(
         project.name,
         "S11_REVIEW_REPORT",
-        JSON.stringify({ metrics: form.metrics, summary, publish_copy: form.publish_copy, package: project.step_ten }, null, 2)
+        JSON.stringify({ metrics: form.metrics, summary, publish_copy: form.publish_copy, package: project.step_ten }, null, 2),
+        { projectId: project.id, targetType: "review" }
       );
       const parsed = firstJsonObject(result.content);
       const tasks = listValue(parsed.optimization_tasks)
@@ -6450,7 +6869,8 @@ function StepElevenSection({
       const result = await generateProjectTextTask(
         project.name,
         "S11_NEXT_EPISODE",
-        JSON.stringify({ current_story: project.step_one, review_report: form.review_report, metrics: form.metrics, target: "next_episode_suggestions" }, null, 2)
+        JSON.stringify({ current_story: project.step_one, review_report: form.review_report, metrics: form.metrics, target: "next_episode_suggestions" }, null, 2),
+        { projectId: project.id, targetType: "next_episode" }
       );
       const parsed = firstJsonObject(result.content);
       setForm((current) => ({ ...current, next_episode_suggestions: textValue(parsed.next_episode_suggestions, result.content) }));

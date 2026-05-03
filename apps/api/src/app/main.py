@@ -46,6 +46,12 @@ from .ai_services import (
     query_minimax_video,
     retrieve_minimax_file,
 )
+from .context_builder import (
+    ContextValidationError,
+    build_fallback_context_prompt,
+    build_task_context_prompt,
+    validate_ai_output,
+)
 from .prompt_registry import describe_prompt_registry, get_prompt_task, validate_prompt_registry
 from .storage import (
     create_project,
@@ -270,6 +276,41 @@ def _dashboard_overview(range_key: str) -> dict:
 
 def _dashboard_range(range: str) -> str:
     return range if range in {"24h", "7d", "30d", "all"} else "7d"
+
+
+def _build_generation_prompt(payload: GenerationRequest, task) -> str:
+    if payload.prompt.startswith("AI_CONTEXT_GATEWAY_V1"):
+        return payload.prompt
+    project = get_project(payload.project_id) if payload.project_id else None
+    try:
+        if project is not None:
+            bundle = build_task_context_prompt(
+                task,
+                project,
+                payload.prompt,
+                payload.target_type,
+                payload.target_id,
+            )
+        else:
+            bundle = build_fallback_context_prompt(task, payload.project_name, payload.prompt)
+    except ContextValidationError as exc:
+        raise HTTPException(status_code=422, detail=f"AI 输入上下文不符合要求：{exc}") from exc
+    return bundle.prompt
+
+
+def _validate_generation_output(task_id: str, content: str) -> None:
+    try:
+        validate_ai_output(task_id, content)
+    except ContextValidationError as exc:
+        raise HTTPException(status_code=502, detail=f"AI 输出不符合契约：{exc}") from exc
+
+
+def _generate_context_gateway_text(payload: GenerationRequest, task) -> GeneratedTextResponse:
+    try:
+        content = generate_deepseek_text(payload.project_name, payload.prompt, payload.mode, task.task_id)
+    except AIServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return GeneratedTextResponse(content=content, record=f"DeepSeek 完成 {task.task_id}")
 
 
 @app.get("/healthz")
@@ -499,16 +540,30 @@ def generate_step_one_outline(payload: GenerationRequest) -> GeneratedTextRespon
         "如果素材不足，也要基于已有信息补齐结构，不要输出任何解释性段落。\n\n"
         f"{payload.prompt}"
     )
+    prompt = _build_generation_prompt(payload, task)
     try:
         content = generate_deepseek_text(payload.project_name, prompt, payload.mode or "outline", task.task_id)
     except AIServiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return GeneratedTextResponse(content=content, record="DeepSeek 生成季纲草案")
-
-
 @app.post("/api/generate/step-two", response_model=GeneratedTextResponse)
 def generate_step_two(payload: GenerationRequest) -> GeneratedTextResponse:
     task = get_prompt_task(payload.task_id, payload.mode)
+    if payload.prompt.startswith("AI_CONTEXT_GATEWAY_V1"):
+        try:
+            content = generate_deepseek_text(payload.project_name, payload.prompt, payload.mode, task.task_id)
+        except AIServiceError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        label = {
+            "reference": "DeepSeek 生成参考文本",
+            "novel": "DeepSeek 生成小说正文",
+            "roles": "DeepSeek 生成角色画像",
+            "terms": "DeepSeek 生成术语库",
+            "guidance": "DeepSeek 生成写作指导",
+            "script": "DeepSeek 生成剧本",
+            "check": "DeepSeek 完成一致性检查",
+        }.get(payload.mode, "DeepSeek 生成内容")
+        return GeneratedTextResponse(content=content, record=label)
     prompt = f"{task.user_instruction}\n输出要求：{task.output_contract}\n\n{payload.prompt}"
     try:
         content = generate_deepseek_text(payload.project_name, prompt, payload.mode, task.task_id)
@@ -529,6 +584,8 @@ def generate_step_two(payload: GenerationRequest) -> GeneratedTextResponse:
 @app.post("/api/generate/text-task", response_model=GeneratedTextResponse)
 def api_generate_text_task(payload: GenerationRequest) -> GeneratedTextResponse:
     task = get_prompt_task(payload.task_id, payload.mode)
+    if payload.prompt.startswith("AI_CONTEXT_GATEWAY_V1"):
+        return _generate_context_gateway_text(payload, task)
     prompt = (
         f"{task.user_instruction}\n"
         f"输出要求：{task.output_contract}\n\n"

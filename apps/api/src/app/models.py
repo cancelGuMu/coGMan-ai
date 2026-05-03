@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 StepId = Literal[
@@ -180,13 +180,28 @@ class ShotItem(BaseModel):
     characters: list[str] = Field(default_factory=list)
     props: list[str] = Field(default_factory=list)
     purpose: str = ""
+    story_beat: str = ""
+    visual_description: str = ""
+    action: str = ""
+    blocking: str = ""
     duration_seconds: int = 5
     shot_size: str = ""
     camera_angle: str = ""
     composition: str = ""
+    lens: str = ""
     movement: str = ""
+    camera_motion: str = ""
+    lighting: str = ""
+    color_mood: str = ""
     dialogue: str = ""
+    sound_design: str = ""
     rhythm: str = ""
+    transition: str = ""
+    continuity_notes: str = ""
+    asset_requirements: str = ""
+    generation_notes: str = ""
+    vfx_notes: str = ""
+    risk_flags: str = ""
     status: Literal["draft", "ready", "queued"] = "draft"
 
 
@@ -228,6 +243,7 @@ class ImageCandidate(BaseModel):
     prompt: str = ""
     status: Literal["candidate", "keyframe", "first-frame", "selected", "discarded"] = "candidate"
     metadata: str = ""
+    repaint_instruction: str = ""
     repaint_prompt: str = ""
 
 
@@ -533,6 +549,35 @@ class GenerationRequest(BaseModel):
     prompt: str = ""
     mode: str = "generic"
     task_id: str | None = None
+    project_id: str | None = None
+    target_id: str | None = None
+    target_type: str | None = None
+    context_mode: str = "auto"
+
+    @model_validator(mode="after")
+    def build_minimized_context(self) -> "GenerationRequest":
+        if self.context_mode == "raw" or self.prompt.startswith("AI_CONTEXT_GATEWAY_V1"):
+            return self
+        from .context_builder import (
+            ContextValidationError,
+            build_fallback_context_prompt,
+            build_task_context_prompt,
+        )
+        from .prompt_registry import get_prompt_task
+        from .storage import get_project
+
+        task = get_prompt_task(self.task_id, self.mode)
+        try:
+            project = get_project(self.project_id) if self.project_id else None
+            if project is not None:
+                bundle = build_task_context_prompt(task, project, self.prompt, self.target_type, self.target_id)
+            else:
+                bundle = build_fallback_context_prompt(task, self.project_name, self.prompt)
+        except ContextValidationError as exc:
+            raise ValueError(f"AI 输入上下文不符合要求：{exc}") from exc
+        self.prompt = bundle.prompt
+        self.project_name = self.project_name or (project.name if project is not None else "")
+        return self
 
 
 class GeneratedTextResponse(BaseModel):
