@@ -741,9 +741,11 @@ def test_video_generation_prompt_contains_hard_constraints(monkeypatch) -> None:
     assert captured["payload"]["first_frame_image"] == "https://example.test/first.png"
 
 
-def test_minimax_video_accepts_data_url_first_frame_and_clips_prompt(monkeypatch) -> None:
+def test_minimax_video_accepts_data_url_first_frame_and_clips_prompt(monkeypatch, tmp_path) -> None:
     captured: dict[str, Any] = {}
     monkeypatch.setenv("MINIMAX_API_KEY", "test-key")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("MINIMAX_API_KEY=test-key\n", encoding="utf-8")
 
     def fake_post(url: str, payload: dict[str, Any], headers: dict[str, str], timeout: int = 120) -> dict[str, Any]:
         captured.update({"url": url, "payload": payload, "headers": headers, "timeout": timeout})
@@ -755,7 +757,43 @@ def test_minimax_video_accepts_data_url_first_frame_and_clips_prompt(monkeypatch
     result = ai_services.create_minimax_video("slow dolly move, preserve first frame. " * 200, first_frame, 6, "E1#1")
 
     assert result["task_id"] == "video-task-2"
-    assert captured["url"] == "https://api.minimax.io/v1/video_generation"
+    assert captured["url"] == "https://api.minimaxi.com/v1/video_generation"
     assert captured["headers"]["Authorization"] == "Bearer test-key"
     assert captured["payload"]["first_frame_image"] == first_frame
     assert len(captured["payload"]["prompt"]) <= 2_000
+
+
+def test_minimax_video_uses_configurable_base_url(monkeypatch, tmp_path) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(
+        "MINIMAX_API_KEY=test-key\nMINIMAX_BASE_URL=https://example.minimax.test/v1\n",
+        encoding="utf-8",
+    )
+
+    def fake_post(url: str, payload: dict[str, Any], headers: dict[str, str], timeout: int = 120) -> dict[str, Any]:
+        captured.update({"url": url, "payload": payload, "headers": headers, "timeout": timeout})
+        return {"task_id": "video-task-base-url"}
+
+    monkeypatch.setattr(ai_services, "_post_json", fake_post)
+
+    ai_services.create_minimax_video("slow move", "https://example.test/first.png", 6, "E1#1")
+
+    assert captured["url"] == "https://example.minimax.test/v1/video_generation"
+
+
+def test_minimax_video_refreshes_env_file_before_request(monkeypatch, tmp_path) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setenv("MINIMAX_API_KEY", "old-process-key")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("MINIMAX_API_KEY=fresh-file-key\n", encoding="utf-8")
+
+    def fake_post(url: str, payload: dict[str, Any], headers: dict[str, str], timeout: int = 120) -> dict[str, Any]:
+        captured.update({"url": url, "payload": payload, "headers": headers, "timeout": timeout})
+        return {"task_id": "video-task-3"}
+
+    monkeypatch.setattr(ai_services, "_post_json", fake_post)
+
+    ai_services.create_minimax_video("slow move", "https://example.test/first.png", 6, "E1#1")
+
+    assert captured["headers"]["Authorization"] == "Bearer fresh-file-key"

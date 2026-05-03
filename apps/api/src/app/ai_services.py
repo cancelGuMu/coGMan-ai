@@ -131,7 +131,7 @@ def _is_minimax_supported_image(value: str | None) -> bool:
     return value.startswith(("http://", "https://", "data:image/"))
 
 
-def load_env_files() -> None:
+def load_env_files(override: bool = False) -> None:
     roots = [
         Path(__file__).resolve().parents[2],
         Path(__file__).resolve().parents[4],
@@ -146,11 +146,20 @@ def load_env_files() -> None:
             if not line or line.startswith("#") or "=" not in line:
                 continue
             key, value = line.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+            normalized_key = key.strip()
+            normalized_value = value.strip().strip('"').strip("'")
+            if override or normalized_key not in os.environ:
+                os.environ[normalized_key] = normalized_value
 
 
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
+
+
+def _key_fingerprint(value: str) -> str:
+    if len(value) <= 16:
+        return f"len={len(value)}"
+    return f"{value[:10]}...{value[-6:]} len={len(value)}"
 
 
 def _api_url(base_url: str, path: str) -> str:
@@ -271,10 +280,12 @@ def generate_image(prompt: str, shot_label: str = "") -> dict[str, str]:
 
 
 def create_minimax_video(prompt: str, first_frame_image: str | None = None, duration: int = 6, shot_label: str = "") -> dict[str, str]:
+    load_env_files(override=True)
     api_key = _env("MINIMAX_API_KEY")
     if not api_key:
         raise AIServiceError("缺少 MINIMAX_API_KEY")
 
+    base_url = _env("MINIMAX_BASE_URL", "https://api.minimaxi.com")
     model = _env("MINIMAX_VIDEO_MODEL", "MiniMax-Hailuo-2.3")
     payload: dict[str, Any] = {
         "model": model,
@@ -286,14 +297,18 @@ def create_minimax_video(prompt: str, first_frame_image: str | None = None, dura
         payload["first_frame_image"] = first_frame_image
 
     data = _post_json(
-        "https://api.minimax.io/v1/video_generation",
+        _api_url(base_url, "/v1/video_generation"),
         payload,
         {"Authorization": f"Bearer {api_key}"},
         timeout=120,
     )
     task_id = data.get("task_id")
     if not isinstance(task_id, str) or not task_id:
-        raise AIServiceError(f"MiniMax 未返回 task_id：{json.dumps(data, ensure_ascii=False)}")
+        raise AIServiceError(
+            "MiniMax 未返回 task_id："
+            f"{json.dumps(data, ensure_ascii=False)}；"
+            f"base_url={base_url}；model={model}；key={_key_fingerprint(api_key)}"
+        )
     return {
         "task_id": task_id,
         "model": model,
@@ -303,22 +318,26 @@ def create_minimax_video(prompt: str, first_frame_image: str | None = None, dura
 
 
 def query_minimax_video(task_id: str) -> dict[str, Any]:
+    load_env_files(override=True)
     api_key = _env("MINIMAX_API_KEY")
     if not api_key:
         raise AIServiceError("缺少 MINIMAX_API_KEY")
+    base_url = _env("MINIMAX_BASE_URL", "https://api.minimaxi.com")
     data = _get_json(
-        f"https://api.minimax.io/v1/query/video_generation?task_id={task_id}",
+        _api_url(base_url, f"/v1/query/video_generation?task_id={task_id}"),
         {"Authorization": f"Bearer {api_key}"},
     )
     return data
 
 
 def retrieve_minimax_file(file_id: str) -> dict[str, Any]:
+    load_env_files(override=True)
     api_key = _env("MINIMAX_API_KEY")
     if not api_key:
         raise AIServiceError("缺少 MINIMAX_API_KEY")
+    base_url = _env("MINIMAX_BASE_URL", "https://api.minimaxi.com")
     data = _get_json(
-        f"https://api.minimax.io/v1/files/retrieve?file_id={file_id}",
+        _api_url(base_url, f"/v1/files/retrieve?file_id={file_id}"),
         {"Authorization": f"Bearer {api_key}"},
     )
     return data
