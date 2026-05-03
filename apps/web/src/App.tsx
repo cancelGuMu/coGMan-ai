@@ -5639,8 +5639,16 @@ function StepSixSection({
   const [form, setForm] = useState<StepSixData>(project.step_six);
   const [saving, setSaving] = useState(false);
   const [imageGenerationAction, setImageGenerationAction] = useState<string | null>(null);
-  useEffect(() => setForm(project.step_six), [project.step_six]);
+  const [repaintFeedback, setRepaintFeedback] = useState<Record<string, { tone: "progress" | "success" | "error"; message: string }>>({});
+  useEffect(() => {
+    setForm(project.step_six);
+    setRepaintFeedback({});
+  }, [project.step_six]);
   const selectedCount = form.candidates.filter((item) => item.status === "selected" || item.status === "first-frame" || item.status === "keyframe").length;
+
+  function updateRepaintFeedback(imageId: string, tone: "progress" | "success" | "error", message: string) {
+    setRepaintFeedback((current) => ({ ...current, [imageId]: { tone, message } }));
+  }
 
   async function generateImages(scope: "single" | "batch") {
     if (imageGenerationAction) return;
@@ -5735,11 +5743,24 @@ function StepSixSection({
     const userInstruction = (image.repaint_instruction || form.repaint_prompt || form.repaint_mask_note).trim();
     if (!userInstruction) {
       setStatusMessage("请先在该候选图下填写修改意见，再执行 AI 改词并重绘。");
+      updateRepaintFeedback(imageId, "error", "请先在这张图下填写修改意见，再点击 AI 改词并重绘。");
       return;
     }
     setImageGenerationAction(`repaint-prompt:${imageId}`);
     setStatusMessage("AI 正在按修改意见修订完整生图提示词...");
+    updateRepaintFeedback(imageId, "progress", "AI 正在按你的修改意见重写完整生图提示词...");
     try {
+      const compactImageContext = {
+        id: image.id,
+        shot_id: image.shot_id,
+        shot_label: image.shot_label,
+        status: image.status,
+        metadata: image.metadata,
+        original_prompt: limitTextForAi(image.prompt, 6000),
+        previous_repaint_prompt: limitTextForAi(image.repaint_prompt, 3000),
+        user_revision_instruction: userInstruction,
+        omitted_fields: "image.url/base64 is intentionally omitted to keep the AI context within budget.",
+      };
       const result = await generateProjectTextTask(
         project.name,
         "S06_REPAINT_PROMPT",
@@ -5750,8 +5771,7 @@ function StepSixSection({
           "若用户指出角色视线/道具朝向/画面结构割裂，必须显式加入 over-the-shoulder view、POV from the character、page angled toward the character、not front-facing to viewer 等约束，并在 negative_prompt 排除 front-facing document to viewer、display board composition、prop presented to audience、contradictory eyeline。",
           JSON.stringify({
             shot,
-            image,
-            original_prompt: image.prompt,
+            image: compactImageContext,
             step_five_prompt: promptRecord,
             user_revision_instruction: userInstruction,
             repaint_mask_note: form.repaint_mask_note,
@@ -5775,8 +5795,8 @@ function StepSixSection({
               }
             : item
         ),
-        repaint_prompt: fullPrompt,
       }));
+      updateRepaintFeedback(imageId, "progress", "AI 已生成修订提示词，正在提交 gpt-image-2 重绘新候选图。");
 
       setImageGenerationAction(`repaint-image:${imageId}`);
       setStatusMessage("gpt-image-2 正在根据修订提示词重绘新候选图...");
@@ -5798,8 +5818,12 @@ function StepSixSection({
       };
       setForm((current) => ({ ...current, candidates: [...current.candidates, candidate] }));
       setStatusMessage("已完成 AI 改词并重绘，新候选图已追加，原图未覆盖。");
+      updateRepaintFeedback(imageId, "success", `重绘完成：新候选图已追加，来源 ${image.id}，原图未覆盖。`);
+      updateRepaintFeedback(candidate.id, "success", "这是按 AI 修订提示词生成的新候选图。");
     } catch (err) {
-      setStatusMessage(err instanceof Error ? err.message : "AI 改词并重绘失败");
+      const message = err instanceof Error ? err.message : "AI 改词并重绘失败";
+      setStatusMessage(message);
+      updateRepaintFeedback(imageId, "error", `失败：${message}`);
     } finally {
       setImageGenerationAction(null);
     }
@@ -5875,6 +5899,11 @@ function StepSixSection({
             <img src={image.url} alt={image.shot_label} />
             <strong>{image.shot_label} · {image.status}</strong>
             <p>{image.metadata}</p>
+            {repaintFeedback[image.id] ? (
+              <div className={`repaint-feedback ${repaintFeedback[image.id].tone}`}>
+                {repaintFeedback[image.id].message}
+              </div>
+            ) : null}
             {image.repaint_prompt ? <small>重绘提示词：{image.repaint_prompt}</small> : null}
             <label className="field-label repaint-field">
               <span>这张图的修改意见</span>

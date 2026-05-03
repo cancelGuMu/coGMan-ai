@@ -3618,6 +3618,32 @@ select:focus {
   resize: vertical;
 }
 
+.repaint-feedback {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 226, 164, 0.16);
+  background: rgba(41, 32, 22, 0.92);
+  color: #f4dfb3;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  padding: 9px 11px;
+}
+
+.repaint-feedback.progress {
+  border-color: rgba(130, 190, 255, 0.28);
+  color: #cfe7ff;
+}
+
+.repaint-feedback.success {
+  border-color: rgba(132, 222, 163, 0.3);
+  color: #d4f6dc;
+}
+
+.repaint-feedback.error {
+  border-color: rgba(255, 126, 126, 0.36);
+  color: #ffd2ca;
+}
+
 .production-card input,
 .production-card select {
   width: 100%;
