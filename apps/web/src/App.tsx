@@ -185,6 +185,14 @@ async function copyTextToClipboard(text: string, onSuccess: string, setStatusMes
   }
 }
 
+function openExternalUrl(url: string, setStatusMessage: (message: string) => void) {
+  if (!url.trim()) {
+    setStatusMessage("当前视频还没有可在线浏览的地址，请先查询任务状态。");
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 function collectJsonObjects(raw: string): Array<Record<string, unknown>> {
   const candidates: string[] = [];
   const fenced = raw.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi);
@@ -6134,6 +6142,18 @@ function StepEightSection({
           <article className="panel-card production-card" key={clip.id}>
             <strong>{clip.shot_label} · {clip.version}</strong>
             <span>{clip.duration_seconds}s / {clip.status}</span>
+            <div className={`video-online-preview ${clip.url ? "is-ready" : ""}`}>
+              {clip.url ? (
+                <video controls preload="metadata" src={clip.url}>
+                  当前浏览器无法播放该视频。
+                </video>
+              ) : (
+                <div className="video-online-placeholder">
+                  <strong>{clip.status === "failed" ? "生成失败" : clip.status === "processing" ? "生成处理中" : "等待视频地址"}</strong>
+                  <span>{clip.status === "submitted" || clip.status === "processing" ? "点击查询状态，成功后会在这里在线预览。" : "暂无可播放视频。"}</span>
+                </div>
+              )}
+            </div>
             <p>{clip.motion_prompt}</p>
             <small>{clip.metadata}</small>
             <input value={clip.fail_reason} onChange={(event) => updateClip(clip.id, { fail_reason: event.target.value })} placeholder="失败原因：人物变形/动作错/镜头不符" />
@@ -6158,6 +6178,8 @@ function StepEightSection({
               >
                 重生成
               </AIActionButton>
+              <button className="ghost-mini-button" type="button" disabled={!clip.url} onClick={() => openExternalUrl(clip.url, setStatusMessage)}>在线播放</button>
+              <button className="ghost-mini-button" type="button" disabled={!clip.url} onClick={() => void copyTextToClipboard(clip.url, "视频链接已复制", setStatusMessage)}>复制链接</button>
             </div>
           </article>
         ))}
