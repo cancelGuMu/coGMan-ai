@@ -270,7 +270,7 @@ export type VideoClipItem = {
   duration_seconds: number;
   motion_prompt: string;
   reference_note: string;
-  status: "candidate" | "final" | "failed";
+  status: "submitted" | "processing" | "candidate" | "final" | "failed";
   fail_reason: string;
   regeneration_strategy: string;
   version: string;

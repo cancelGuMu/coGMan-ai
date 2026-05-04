@@ -5989,7 +5989,7 @@ function StepEightSection({
           duration_seconds: Math.max(1, Math.round(numberValue(taskPayload.duration_seconds, duration))),
           motion_prompt: motionPrompt,
           reference_note: form.reference_bindings || `首帧绑定：${image.id}`,
-          status: "candidate",
+          status: "submitted",
           fail_reason: "",
           regeneration_strategy: "缩短时长、保持首帧、降低动作幅度",
           version: `v${form.clips.length + index + 1}`,
@@ -6030,7 +6030,7 @@ function StepEightSection({
       const next: VideoClipItem = {
         ...clip,
         id: `clip-reg-${clip.id}-${Date.now()}`,
-        status: "candidate",
+        status: "submitted",
         fail_reason: "",
         version: `${clip.version}-R`,
         url: "",
@@ -6058,21 +6058,29 @@ function StepEightSection({
     try {
       const result = await fetchVideoTaskStatus(taskId);
       const task = result.task;
-      const status = String(task.status ?? task.Status ?? "unknown");
+      const status = String(task.normalized_status ?? task.status ?? task.Status ?? "unknown").toLowerCase();
+      const rawStatus = String(task.raw_status ?? task.status ?? task.Status ?? status);
       const file = task.file as Record<string, unknown> | undefined;
+      const nestedFile = file?.file && typeof file.file === "object" ? file.file as Record<string, unknown> : file;
       const downloadUrl =
-        typeof file?.download_url === "string"
-          ? file.download_url
-          : typeof file?.url === "string"
-            ? file.url
-            : typeof task.video_url === "string"
-              ? task.video_url
-              : "";
+        typeof task.download_url === "string" && task.download_url
+          ? task.download_url
+          : typeof nestedFile?.download_url === "string"
+            ? nestedFile.download_url
+            : typeof nestedFile?.url === "string"
+              ? nestedFile.url
+              : typeof task.video_url === "string"
+                ? task.video_url
+                : "";
+      const failedReason = textValue(task.error_message, textValue(task.fail_reason, textValue(task.message)));
+      const nextStatus: VideoClipItem["status"] = downloadUrl || status === "success" ? "candidate" : status === "failed" || status === "fail" ? "failed" : "processing";
       updateClip(clip.id, {
         url: downloadUrl || clip.url,
-        metadata: `${clip.metadata}；查询状态：${status}${downloadUrl ? "；已回填视频下载地址" : ""}`,
+        status: nextStatus,
+        fail_reason: nextStatus === "failed" ? (failedReason || clip.fail_reason || "MiniMax 返回失败状态") : clip.fail_reason,
+        metadata: `${clip.metadata}；查询状态：${rawStatus}${downloadUrl ? "；已回填视频下载地址" : ""}${failedReason ? `；失败原因：${failedReason}` : ""}`,
       });
-      setStatusMessage(downloadUrl ? "视频任务已完成，已回填下载地址。" : `视频任务状态：${status}`);
+      setStatusMessage(downloadUrl ? "视频任务已完成，已回填下载地址。" : nextStatus === "failed" ? `视频任务失败：${failedReason || "MiniMax 返回失败状态"}` : `视频任务仍在处理中：${rawStatus}`);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "视频任务查询失败");
     } finally {

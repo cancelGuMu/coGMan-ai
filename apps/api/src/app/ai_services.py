@@ -343,6 +343,44 @@ def retrieve_minimax_file(file_id: str) -> dict[str, Any]:
     return data
 
 
+def normalize_minimax_video_task(task: dict[str, Any]) -> dict[str, Any]:
+    raw_status = str(task.get("status") or task.get("Status") or task.get("task_status") or "").strip()
+    normalized_status = raw_status.lower()
+    if normalized_status in {"preparing", "queueing", "processing"}:
+        status = "processing"
+    elif normalized_status == "success":
+        status = "success"
+    elif normalized_status == "fail":
+        status = "failed"
+    else:
+        status = normalized_status or "unknown"
+
+    file_payload = task.get("file")
+    file_info = file_payload if isinstance(file_payload, dict) else {}
+    nested_file = file_info.get("file")
+    if isinstance(nested_file, dict):
+        file_info = nested_file
+    download_url = (
+        file_info.get("download_url")
+        or file_info.get("url")
+        or task.get("video_url")
+        or task.get("download_url")
+    )
+    error_message = (
+        task.get("error_message")
+        or task.get("error")
+        or task.get("fail_reason")
+        or task.get("message")
+    )
+    return {
+        **task,
+        "raw_status": raw_status,
+        "normalized_status": status,
+        "download_url": str(download_url) if download_url else "",
+        "error_message": str(error_message) if error_message else "",
+    }
+
+
 def bytes_to_data_url(raw: bytes, mime_type: str = "application/octet-stream") -> str:
     return f"data:{mime_type};base64,{base64.b64encode(raw).decode('ascii')}"
 

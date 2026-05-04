@@ -42,6 +42,7 @@ from .ai_services import (
     create_minimax_video,
     generate_deepseek_text,
     generate_image,
+    normalize_minimax_video_task,
     query_minimax_video,
     retrieve_minimax_file,
 )
@@ -634,7 +635,7 @@ def api_get_video_task(task_id: str) -> VideoTaskStatusResponse:
                 task["file_error"] = str(file_exc)
     except AIServiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return VideoTaskStatusResponse(task=task)
+    return VideoTaskStatusResponse(task=normalize_minimax_video_task(task))
 
 
 @app.post("/api/import/text")

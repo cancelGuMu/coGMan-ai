@@ -363,3 +363,14 @@
   - 已保留 `quality-rework -> video-generation` 旧项目兼容映射，防止历史项目停留在旧 StepId 时无法打开。
   - 已通过 `.venv\Scripts\python.exe -m pytest`（31 passed）、`npm --workspace apps/web run build` 和 `git diff --check`。
 - 发布建议一句话：本轮已移除步骤 07 质检返工流程，主链路变为步骤 06 入选关键帧直接进入步骤 08 视频生成。
+
+## 2026-05-04 MiniMax 视频任务状态查询修复复审
+
+- 审核结论：通过
+- 问题列表：
+  - 已定位截图中的视频生成任务并非提交失败：MiniMax 已返回 `task_id` 且状态为 `submitted`，但前端把提交后的任务直接标为 `candidate`，容易让“待查询任务”看起来像“可用候选视频”。
+  - 已在后端标准化 MiniMax 查询结果，兼容 `Preparing/Queueing/Processing/Success/Fail`，并把文件检索返回里的 `file.download_url` 提升为顶层 `download_url`。
+  - 已在前端新增 `submitted/processing` 视频状态，提交后显示为 `submitted`；查询成功并拿到下载地址后才改为 `candidate`，失败时改为 `failed` 并写入真实失败原因。
+  - 已新增后端测试覆盖 `Success + file_id + file.download_url` 的查询回填链路。
+  - 已通过 `.venv\Scripts\python.exe -m pytest`（32 passed）、`npm --workspace apps/web run build` 和 `git diff --check`。
+- 发布建议一句话：本轮修复 MiniMax 视频任务提交后状态误导和成功文件地址无法回填的问题。

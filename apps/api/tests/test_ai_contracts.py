@@ -782,3 +782,26 @@ def test_minimax_video_refreshes_env_file_before_request(monkeypatch, tmp_path) 
     ai_services.create_minimax_video("slow move", "https://example.test/first.png", 6, "E1#1")
 
     assert captured["headers"]["Authorization"] == "Bearer fresh-file-key"
+
+
+def test_minimax_video_query_normalizes_success_file(monkeypatch) -> None:
+    monkeypatch.setenv("MINIMAX_API_KEY", "test-key")
+
+    def fake_query(task_id: str) -> dict[str, Any]:
+        assert task_id == "video-task-success"
+        return {"task_id": task_id, "status": "Success", "file_id": "file-1"}
+
+    def fake_retrieve(file_id: str) -> dict[str, Any]:
+        assert file_id == "file-1"
+        return {"file": {"download_url": "https://example.test/video.mp4"}}
+
+    monkeypatch.setattr("app.main.query_minimax_video", fake_query)
+    monkeypatch.setattr("app.main.retrieve_minimax_file", fake_retrieve)
+
+    response = client.get("/api/generate/video/video-task-success")
+
+    assert response.status_code == 200
+    task = response.json()["task"]
+    assert task["normalized_status"] == "success"
+    assert task["download_url"] == "https://example.test/video.mp4"
+    assert task["raw_status"] == "Success"

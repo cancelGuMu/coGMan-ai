@@ -265,7 +265,7 @@ class VideoClipItem(BaseModel):
     duration_seconds: int = 5
     motion_prompt: str = ""
     reference_note: str = ""
-    status: Literal["candidate", "final", "failed"] = "candidate"
+    status: Literal["submitted", "processing", "candidate", "final", "failed"] = "submitted"
     fail_reason: str = ""
     regeneration_strategy: str = ""
     version: str = ""
