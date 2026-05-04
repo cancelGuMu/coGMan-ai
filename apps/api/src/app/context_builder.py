@@ -71,8 +71,6 @@ EXPECTED_OUTPUT_KEYS: dict[str, set[str]] = {
     "S05_PROMPT_CHECK": {"pass_for_generation", "issues", "result"},
     "S06_IMAGE_TASK": {"task_type", "shot_id", "prompt", "negative_prompt", "parameters", "result"},
     "S06_REPAINT_PROMPT": {"repaint_prompt", "negative_prompt", "keep_terms", "change_terms", "result"},
-    "S07_IMAGE_QC": {"overall_status", "pass_for_video", "issues", "result"},
-    "S07_REWORK_SUGGESTION": {"target_step", "action", "suggested_prompt_patch", "keep_terms", "result"},
     "S08_VIDEO_TASK": {"task_type", "shot_id", "prompt", "negative_prompt", "duration_seconds", "result"},
     "S08_VIDEO_QC": {"recommended_status", "usable_for_editing", "issues", "regeneration_strategy", "result"},
     "S09_DIALOGUE_EXTRACT": {"dialogue_lines", "result"},
@@ -414,22 +412,13 @@ def _relevant_context_for_task(task_id: str, project: ProjectRecord, target: Any
             "related_image_candidates": _related_images_summary(project, target_shot_id, limit=6),
             "style_and_rules": _style_rules(project),
         }
-    if task_id.startswith("S07_"):
-        return {
-            "target_image": sanitize_for_ai(target),
-            "shots": _shots_summary(project, limit=20),
-            "image_candidates": _images_summary(project, limit=30),
-            "assets": _asset_summary(project),
-        }
     if task_id.startswith("S08_"):
         target_shot_id = _target_shot_id(target)
-        target_asset_id = _target_asset_id(target)
         return {
             "target_video_source": sanitize_for_ai(target),
             "target_shot": _single_shot_summary(project, target_shot_id),
             "target_prompt": _single_prompt_summary(project, target_shot_id),
             "related_image_candidates": _related_images_summary(project, target_shot_id, limit=6),
-            "qc_reports": _quality_reports_for_asset(project, target_asset_id, limit=6),
             "style_and_rules": _style_rules(project),
             "video_settings": {
                 "motion_settings": clip_text(project.step_eight.motion_settings, 1_000),
@@ -841,27 +830,6 @@ def _related_images_summary(project: ProjectRecord, shot_id: str, limit: int) ->
         }
         for item in related[:limit]
     ]
-
-
-def _quality_reports_for_asset(project: ProjectRecord, asset_id: str, limit: int) -> list[dict[str, Any]]:
-    if not asset_id:
-        return []
-    return [
-        {
-            "id": item.id,
-            "asset_id": item.asset_id,
-            "shot_label": clip_text(item.shot_label, 160),
-            "severity": item.severity,
-            "category": item.category,
-            "issue": clip_text(item.issue, 500),
-            "suggestion": clip_text(item.suggestion, 500),
-            "repair_prompt": clip_text(item.repair_prompt, 800),
-            "status": item.status,
-            "recheck_result": clip_text(item.recheck_result, 500),
-        }
-        for item in project.step_seven.reports
-        if item.asset_id == asset_id
-    ][:limit]
 
 
 def _videos_summary(project: ProjectRecord, limit: int) -> list[dict[str, Any]]:

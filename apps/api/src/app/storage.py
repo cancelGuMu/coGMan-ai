@@ -16,7 +16,6 @@ from .models import (
     SaveStepFiveRequest,
     SaveStepFourRequest,
     SaveStepNineRequest,
-    SaveStepSevenRequest,
     SaveStepSixRequest,
     SaveStepTenRequest,
     SaveStepOneRequest,
@@ -33,6 +32,7 @@ LEGACY_STEP_MAP = {
     "storyboard-design": "storyboard-planning",
     "character-image": "image-generation",
     "image-to-video": "video-generation",
+    "quality-rework": "video-generation",
     "voice-subtitle": "audio-subtitle",
     "editing-export": "final-editing",
     "distribution": "publish-review",
@@ -297,11 +297,7 @@ def save_step_five(project_id: str, payload: SaveStepFiveRequest) -> ProjectReco
 
 
 def save_step_six(project_id: str, payload: SaveStepSixRequest) -> ProjectRecord | None:
-    return _save_step_data(project_id, "step_six", payload.data, "待质检返工", 90, "quality-rework")
-
-
-def save_step_seven(project_id: str, payload: SaveStepSevenRequest) -> ProjectRecord | None:
-    return _save_step_data(project_id, "step_seven", payload.data, "待视频生成", 92, "video-generation")
+    return _save_step_data(project_id, "step_six", payload.data, "待视频生成", 92, "video-generation")
 
 
 def save_step_eight(project_id: str, payload: SaveStepEightRequest) -> ProjectRecord | None:

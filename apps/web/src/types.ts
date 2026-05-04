@@ -5,7 +5,6 @@ export type StepId =
   | "storyboard-planning"
   | "prompt-generation"
   | "image-generation"
-  | "quality-rework"
   | "video-generation"
   | "audio-subtitle"
   | "final-editing"
@@ -262,37 +261,6 @@ export type StepSixData = {
   validation_report: string;
 };
 
-export type QualityReportItem = {
-  id: string;
-  asset_id: string;
-  shot_label: string;
-  severity: "low" | "medium" | "high";
-  category: "角色一致性" | "场景道具" | "分镜符合性" | "生成错误";
-  issue: string;
-  suggestion: string;
-  repair_prompt: string;
-  status: "pending" | "rework" | "passed";
-  recheck_result: string;
-};
-
-export type ReworkTask = {
-  id: string;
-  source_issue_id: string;
-  asset_id: string;
-  title: string;
-  prompt: string;
-  status: "todo" | "done";
-};
-
-export type StepSevenData = {
-  selected_asset_id: string;
-  reports: QualityReportItem[];
-  rework_tasks: ReworkTask[];
-  checklist_note: string;
-  export_text: string;
-  validation_report: string;
-};
-
 export type VideoClipItem = {
   id: string;
   shot_id: string;
@@ -474,7 +442,6 @@ export type ProjectRecord = {
   step_four: StepFourData;
   step_five: StepFiveData;
   step_six: StepSixData;
-  step_seven: StepSevenData;
   step_eight: StepEightData;
   step_nine: StepNineData;
   step_ten: StepTenData;

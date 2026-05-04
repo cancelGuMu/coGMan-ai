@@ -13,7 +13,6 @@ StepId = Literal[
     "storyboard-planning",
     "prompt-generation",
     "image-generation",
-    "quality-rework",
     "video-generation",
     "audio-subtitle",
     "final-editing",
@@ -257,37 +256,6 @@ class StepSixData(BaseModel):
     validation_report: str = ""
 
 
-class QualityReportItem(BaseModel):
-    id: str = ""
-    asset_id: str = ""
-    shot_label: str = ""
-    severity: Literal["low", "medium", "high"] = "medium"
-    category: Literal["角色一致性", "场景道具", "分镜符合性", "生成错误"] = "生成错误"
-    issue: str = ""
-    suggestion: str = ""
-    repair_prompt: str = ""
-    status: Literal["pending", "rework", "passed"] = "pending"
-    recheck_result: str = ""
-
-
-class ReworkTask(BaseModel):
-    id: str = ""
-    source_issue_id: str = ""
-    asset_id: str = ""
-    title: str = ""
-    prompt: str = ""
-    status: Literal["todo", "done"] = "todo"
-
-
-class StepSevenData(BaseModel):
-    selected_asset_id: str = ""
-    reports: list[QualityReportItem] = Field(default_factory=list)
-    rework_tasks: list[ReworkTask] = Field(default_factory=list)
-    checklist_note: str = "角色一致性、场景道具、分镜符合性、生成错误四类检查项待执行。"
-    export_text: str = ""
-    validation_report: str = ""
-
-
 class VideoClipItem(BaseModel):
     id: str = ""
     shot_id: str = ""
@@ -469,7 +437,6 @@ class ProjectRecord(BaseModel):
     step_four: StepFourData = Field(default_factory=StepFourData)
     step_five: StepFiveData = Field(default_factory=StepFiveData)
     step_six: StepSixData = Field(default_factory=StepSixData)
-    step_seven: StepSevenData = Field(default_factory=StepSevenData)
     step_eight: StepEightData = Field(default_factory=StepEightData)
     step_nine: StepNineData = Field(default_factory=StepNineData)
     step_ten: StepTenData = Field(default_factory=StepTenData)
@@ -522,10 +489,6 @@ class SaveStepFiveRequest(BaseModel):
 
 class SaveStepSixRequest(BaseModel):
     data: StepSixData
-
-
-class SaveStepSevenRequest(BaseModel):
-    data: StepSevenData
 
 
 class SaveStepEightRequest(BaseModel):

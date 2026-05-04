@@ -8,12 +8,11 @@
 
 ## 步骤目标
 
-步骤 08「视频生成」负责把通过质检的关键帧转化为动态镜头，生成可剪辑的视频片段。页面需要支持：
+步骤 08「视频生成」负责把入选关键帧转化为动态镜头，生成可剪辑的视频片段。页面需要支持：
 
 - 读取步骤 04 的镜头表、景别、运镜、时长和剧情目的。
 - 读取步骤 05 的 I2V 提示词、负面词和视频生成参数。
 - 读取步骤 06 的入选关键帧。
-- 读取步骤 07 的质检门禁状态和通过素材。
 - 创建视频生成任务。
 - 配置动作、表情、环境动态、镜头运动、首帧/首尾帧/姿态参考。
 - 管理多个视频候选版本。
@@ -27,7 +26,6 @@
 | 04 分镜规划 | 镜头编号、集数、场景、角色、景别、构图、动作、运镜、台词、时长 | 创建视频任务、校验视频片段是否符合分镜 |
 | 05 提词生成 | I2V 提示词、负面提示词、模型参数、锁定关键词、提示词版本 | 作为视频生成任务输入 |
 | 06 画面生成 | 首帧、关键帧、分镜图、候选图、入选图 | 作为图生视频的首帧、尾帧或参考素材 |
-| 07 质检返工 | 通过素材、废弃素材、待修素材、质检门禁状态、返工意见 | 控制哪些素材能进入视频生成 |
 
 ## 下游消费者
 
@@ -183,7 +181,7 @@ type CameraMotionType =
 | `shotId` | `string` | 关联镜头 ID | 是 | `""` |
 | `referenceType` | `VideoReferenceType` | 参考类型 | 是 | `"first_frame"` |
 | `assetId` | `string` | 参考素材 ID | 是 | `""` |
-| `sourceStepId` | `"image-generation" | "quality-rework" | "video-generation"` | 素材来源步骤 | 是 | `"quality-rework"` |
+| `sourceStepId` | `"image-generation" | "video-generation"` | 素材来源步骤 | 是 | `"image-generation"` |
 | `qualityStatus` | `QualityAssetStatus` | 素材质检状态 | 否 | `"approved"` |
 | `weight` | `number` | 参考权重 0-1 | 否 | `1` |
 | `note` | `string` | 备注 | 否 | `""` |
@@ -379,17 +377,14 @@ type VideoRetryStrategyType =
 
 ## `VideoGenerationGateSnapshot`
 
-用于保存步骤 08 读取上游依赖时的门禁快照，避免后续上游改动导致当前视频任务无法解释。
+用于保存步骤 08 读取上游依赖时的素材快照，避免后续上游改动导致当前视频任务无法解释。
 
 | 字段名 | 类型 | 用途 | 必填 | 默认值建议 |
 | --- | --- | --- | --- | --- |
-| `qualityGateStatus` | `QualityGateStatus` | 步骤 07 门禁状态 | 是 | `"not_checked"` |
-| `approvedAssetIds` | `string[]` | 允许进入视频生成的素材 ID | 否 | `[]` |
-| `blockedAssetIds` | `string[]` | 被阻止进入视频生成的素材 ID | 否 | `[]` |
+| `selectedAssetIds` | `string[]` | 入选关键帧素材 ID | 否 | `[]` |
 | `sourceStepSixVersionId` | `string | null` | 读取步骤 06 的版本 ID | 否 | `null` |
-| `sourceStepSevenVersionId` | `string | null` | 读取步骤 07 的版本 ID | 否 | `null` |
 | `capturedAt` | `string | null` | 快照时间 | 否 | `null` |
-| `note` | `string` | 门禁备注 | 否 | `""` |
+| `note` | `string` | 素材备注 | 否 | `""` |
 
 ### `QualityGateStatus`
 
@@ -679,11 +674,8 @@ const defaultStepEightVideoGenerationData: StepEightVideoGenerationData = {
   },
   versionRecords: [],
   gateSnapshot: {
-    qualityGateStatus: "not_checked",
-    approvedAssetIds: [],
-    blockedAssetIds: [],
+    selectedAssetIds: [],
     sourceStepSixVersionId: null,
-    sourceStepSevenVersionId: null,
     capturedAt: null,
     note: "",
   },

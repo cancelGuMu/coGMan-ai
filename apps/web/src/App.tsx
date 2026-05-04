@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+﻿import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   AIActionButton,
@@ -31,7 +31,6 @@ import {
   saveStepFour,
   saveStepNine,
   saveStepOne,
-  saveStepSeven,
   saveStepSix,
   saveStepTen,
   saveStepThree,
@@ -63,8 +62,6 @@ import type {
   PromptItem,
   ProjectRecord,
   ProjectSummary,
-  QualityReportItem,
-  ReworkTask,
   ScriptRhythmNode,
   ShotItem,
   StepCompletionStatus,
@@ -73,7 +70,6 @@ import type {
   StepFiveData,
   StepFourData,
   StepNineData,
-  StepSevenData,
   StepSixData,
   StepTenData,
   StepOneData,
@@ -835,15 +831,9 @@ const workflowShowcase = [
     tags: ["关键帧", "批量生成"],
   },
   {
-    no: "07",
-    title: "质检返工",
-    summary: "检查角色、场景、风格和镜头逻辑，修复问题素材后再进入视频环节。",
-    tags: ["素材质检", "返工修复"],
-  },
-  {
     no: "08",
     title: "视频生成",
-    summary: "把通过质检的关键帧转为动态镜头，产出可剪辑的视频片段。",
+    summary: "把入选关键帧转为动态镜头，产出可剪辑的视频片段。",
     tags: ["动态镜头", "片段预览"],
   },
   {
@@ -2798,13 +2788,6 @@ function CreativeWorkspaceContent({
             setStatusMessage={announceStatusMessage}
           />
         ) : null}
-        {activeStep.id === "quality-rework" ? (
-          <StepSevenSection
-            project={project}
-            onSaved={(nextProject, message) => handleProjectSaved(mergeProjectDefaults(nextProject), message)}
-            setStatusMessage={announceStatusMessage}
-          />
-        ) : null}
         {activeStep.id === "video-generation" ? (
           <StepEightSection
             project={project}
@@ -2840,7 +2823,6 @@ function CreativeWorkspaceContent({
         activeStep.id !== "storyboard-planning" &&
         activeStep.id !== "prompt-generation" &&
         activeStep.id !== "image-generation" &&
-        activeStep.id !== "quality-rework" &&
         activeStep.id !== "video-generation" &&
         activeStep.id !== "audio-subtitle" &&
         activeStep.id !== "final-editing" &&
@@ -5840,7 +5822,7 @@ function StepSixSection({
         .map((item) => item.shot_id)
     );
     const missing = Array.from(shotIds).filter((id) => !selectedShotIds.has(id));
-    const report = missing.length ? `仍有 ${missing.length} 个镜头未选择入选图：${missing.join("、")}` : "所有镜头都已有入选图，可进入质检返工。";
+    const report = missing.length ? `仍有 ${missing.length} 个镜头未选择入选图：${missing.join("、")}` : "所有镜头都已有入选图，可进入视频生成。";
     setForm((current) => ({ ...current, validation_report: report, selected_package_note: `入选素材 ${selectedCount} 张` }));
     setStatusMessage(report);
   }
@@ -5881,7 +5863,7 @@ function StepSixSection({
         </select>
         <AIActionButton className="primary-pill inline-pill" isGenerating={imageGenerationAction === "batch"} disabled={Boolean(imageGenerationAction)} loadingLabel="图片批量生成中" onClick={() => void generateImages("batch")}>批量生成图片</AIActionButton>
         <AIActionButton isGenerating={imageGenerationAction === "single"} disabled={Boolean(imageGenerationAction)} loadingLabel="单镜生成中" onClick={() => void generateImages("single")}>单镜生成</AIActionButton>
-        <button className="ghost-button inline-button" type="button" onClick={validateSelectedPackage}>进入质检校验</button>
+        <button className="ghost-button inline-button" type="button" onClick={validateSelectedPackage}>进入视频校验</button>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存候选图"}</button>
       </div>
       <div className="field-row compact-row">
@@ -5942,178 +5924,6 @@ function StepSixSection({
   );
 }
 
-function StepSevenSection({
-  project,
-  onSaved,
-  setStatusMessage,
-}: {
-  project: ProjectRecord;
-  onSaved: (project: ProjectRecord, message: string) => void;
-  setStatusMessage: (message: string) => void;
-}) {
-  const [form, setForm] = useState<StepSevenData>(project.step_seven);
-  const [saving, setSaving] = useState(false);
-  const [qualityAction, setQualityAction] = useState<string | null>(null);
-  useEffect(() => setForm(project.step_seven), [project.step_seven]);
-  const selectedImages = project.step_six.candidates.filter((item) => item.status === "selected" || item.status === "first-frame" || item.status === "keyframe");
-
-  async function runQualityCheck(scope: "single" | "batch") {
-    if (qualityAction) return;
-    const targets = scope === "single" ? selectedImages.slice(0, 1) : selectedImages;
-    if (!targets.length) {
-      setStatusMessage("请先在步骤六选择待质检图片。");
-      return;
-    }
-    setQualityAction(scope);
-    setStatusMessage("AI 正在生成质检报告...");
-    try {
-      const reports: QualityReportItem[] = [];
-      for (let index = 0; index < targets.length; index += 1) {
-        const image = targets[index];
-        const result = await generateProjectTextTask(
-          project.name,
-          "S07_IMAGE_QC",
-          [
-            "图片候选：",
-            JSON.stringify(image, null, 2),
-            "对应镜头：",
-            JSON.stringify(project.step_four.shots.find((shot) => shot.id === image.shot_id) ?? {}, null, 2),
-            "资产规则：",
-            JSON.stringify(project.step_three, null, 2),
-          ].join("\n"),
-          { projectId: project.id, targetType: "image", targetId: image.id }
-        );
-        const parsed = firstJsonObject(result.content);
-        const issues = listValue(parsed.issues);
-        if (!issues.length) {
-          reports.push({
-            id: `qc-${image.id}-${Date.now()}-${index}`,
-            asset_id: image.id,
-            shot_label: image.shot_label,
-            severity: "low",
-            category: "分镜符合性",
-            issue: textValue(parsed.overall_status, "AI 未发现明显阻断问题"),
-            suggestion: textValue(parsed.pass_for_video) === "false" ? "建议人工复核后再进入视频生成。" : "可人工确认后进入视频生成。",
-            repair_prompt: `${image.prompt}，保持角色与场景一致，修复可见瑕疵`,
-            status: "pending",
-            recheck_result: "",
-          });
-        } else {
-          issues.forEach((issue, issueIndex) => {
-            const record = issue && typeof issue === "object" ? (issue as Record<string, unknown>) : {};
-            const categoryText = textValue(record.category, "分镜符合性");
-            const category = ["角色一致性", "场景道具", "分镜符合性", "生成错误"].includes(categoryText)
-              ? categoryText as QualityReportItem["category"]
-              : "分镜符合性";
-            reports.push({
-              id: `qc-${image.id}-${Date.now()}-${index}-${issueIndex}`,
-              asset_id: image.id,
-              shot_label: image.shot_label,
-              severity: severityValue(record.severity),
-              category,
-              issue: textValue(record.issue, textValue(issue, "AI 发现潜在问题")),
-              suggestion: textValue(record.suggestion, "请按问题区域重新生成或局部重绘。"),
-              repair_prompt: textValue(record.repair_prompt, `${image.prompt}，修复${category}问题，保持角色与场景一致`),
-              status: "pending",
-              recheck_result: "",
-            });
-          });
-        }
-      }
-      setForm((current) => ({ ...current, reports: [...current.reports, ...reports], selected_asset_id: targets[0]?.id ?? current.selected_asset_id }));
-      setStatusMessage(`AI 已生成 ${reports.length} 条质检报告`);
-    } catch (err) {
-      setStatusMessage(err instanceof Error ? err.message : "AI 质检失败");
-    } finally {
-      setQualityAction(null);
-    }
-  }
-
-  function createReworkTask(report: QualityReportItem) {
-    setForm((current) => ({
-      ...current,
-      reports: current.reports.map((item) => item.id === report.id ? { ...item, status: "rework" } : item),
-      rework_tasks: [
-        ...current.rework_tasks,
-        {
-          id: `rw-${report.id}`,
-          source_issue_id: report.id,
-          asset_id: report.asset_id,
-          title: `${report.shot_label} 返工：${report.category}`,
-          prompt: report.repair_prompt,
-          status: "todo",
-        },
-      ],
-    }));
-    setStatusMessage("已创建返工任务");
-  }
-
-  function markPassed(reportId?: string) {
-    const confirmed = reportId ? true : window.confirm("确认批量标记全部素材通过质检吗？");
-    if (!confirmed) return;
-    setForm((current) => ({
-      ...current,
-      reports: current.reports.map((item) => (!reportId || item.id === reportId ? { ...item, status: "passed", recheck_result: "人工复检通过" } : item)),
-    }));
-    setStatusMessage(reportId ? "该素材已标记通过" : "全部质检项已批量标记通过");
-  }
-
-  function exportReport() {
-    const text = form.reports.map((item) => `${item.shot_label}｜${item.category}｜${item.severity}｜${item.issue}｜建议：${item.suggestion}`).join("\n");
-    setForm((current) => ({ ...current, export_text: text || "暂无质检问题", validation_report: form.reports.some((item) => item.status !== "passed") ? "仍有未通过素材，视频生成将默认拦截。" : "质检已全部通过，可进入视频生成。" }));
-    void copyTextToClipboard(text || "暂无质检问题", "质检报告已复制", setStatusMessage);
-  }
-
-  async function handleSave() {
-    setSaving(true);
-    try {
-      const saved = await saveStepSeven(project.id, form);
-      onSaved(saved, "步骤七质检返工已保存");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <section className="editor-section" id="quality-rework">
-      <div className="section-headline">
-        <div>
-          <span className="eyebrow">步骤七</span>
-          <h2>质检返工</h2>
-          <p>检查入选图的角色一致性、场景道具、分镜符合性和生成错误，并生成返工建议。</p>
-        </div>
-        <div className="chip-row"><span className="ghost-chip">待检素材 {selectedImages.length}</span><span className="ghost-chip">问题 {form.reports.length}</span></div>
-      </div>
-      <div className="action-row">
-        <AIActionButton className="primary-pill inline-pill" isGenerating={qualityAction === "batch"} disabled={Boolean(qualityAction)} loadingLabel="AI 质检中" onClick={() => void runQualityCheck("batch")}>批量AI质检</AIActionButton>
-        <AIActionButton isGenerating={qualityAction === "single"} disabled={Boolean(qualityAction)} loadingLabel="AI 质检中" onClick={() => void runQualityCheck("single")}>单素材质检</AIActionButton>
-        <button className="ghost-button inline-button" type="button" onClick={() => markPassed()}>批量标记通过</button>
-        <button className="ghost-button inline-button" type="button" onClick={exportReport}>导出报告</button>
-        <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存质检"}</button>
-      </div>
-      <div className="field-row compact-row">
-        <label className="field-label"><span>人工检查项</span><textarea value={form.checklist_note} onChange={(event) => setForm({ ...form, checklist_note: event.target.value })} /></label>
-        <label className="field-label"><span>进入视频生成校验</span><textarea value={form.validation_report} onChange={(event) => setForm({ ...form, validation_report: event.target.value })} placeholder="未通过素材会在视频生成前提示。" /></label>
-      </div>
-      <div className="production-grid">
-        {form.reports.map((report) => (
-          <article className="panel-card production-card" key={report.id}>
-            <strong>{report.shot_label} · {report.category}</strong>
-            <span>{report.severity} / {report.status}</span>
-            <p>{report.issue}</p>
-            <small>{report.suggestion}</small>
-            <div className="action-row">
-              <button className="ghost-mini-button" type="button" onClick={() => createReworkTask(report)}>生成返工</button>
-              <button className="ghost-mini-button" type="button" onClick={() => markPassed(report.id)}>标记通过</button>
-              <button className="ghost-mini-button" type="button" onClick={() => void copyTextToClipboard(report.repair_prompt, "返工 prompt 已复制", setStatusMessage)}>复制建议</button>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function StepEightSection({
   project,
   onSaved,
@@ -6127,16 +5937,14 @@ function StepEightSection({
   const [saving, setSaving] = useState(false);
   const [videoGenerationAction, setVideoGenerationAction] = useState<string | null>(null);
   useEffect(() => setForm(project.step_eight), [project.step_eight]);
-  const passedReports = project.step_seven.reports.filter((item) => item.status === "passed");
   const usableImages = project.step_six.candidates.filter((item) => item.status === "selected" || item.status === "first-frame" || item.status === "keyframe");
   const visibleClips = form.clips.filter((item) => !form.filter_text || item.shot_label.includes(form.filter_text) || item.status.includes(form.filter_text));
 
   async function generateVideos(scope: "single" | "batch") {
     if (videoGenerationAction) return;
-    const sourceImages = usableImages.filter((image) => !project.step_seven.reports.some((report) => report.asset_id === image.id && report.status !== "passed"));
-    const targets = scope === "single" ? sourceImages.slice(0, 1) : sourceImages;
+    const targets = scope === "single" ? usableImages.slice(0, 1) : usableImages;
     if (!targets.length) {
-      setStatusMessage("请先在步骤六生成并选择通过质检的关键帧。");
+      setStatusMessage("请先在步骤六生成并选择关键帧。");
       return;
     }
     setVideoGenerationAction(scope);
@@ -6297,7 +6105,7 @@ function StepEightSection({
         <div>
           <span className="eyebrow">步骤八</span>
           <h2>视频生成</h2>
-          <p>绑定通过质检的关键帧，生成候选视频、记录失败原因、重生成策略并选择最终片段。</p>
+          <p>绑定入选关键帧，生成候选视频、记录失败原因、重生成策略并选择最终片段。</p>
         </div>
         <div className="chip-row"><span className="ghost-chip">候选视频 {form.clips.length}</span><span className="ghost-chip">最终 {form.clips.filter((item) => item.status === "final").length}</span></div>
       </div>

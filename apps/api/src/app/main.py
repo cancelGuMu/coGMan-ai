@@ -28,7 +28,6 @@ from .models import (
     SaveStepFiveRequest,
     SaveStepFourRequest,
     SaveStepNineRequest,
-    SaveStepSevenRequest,
     SaveStepSixRequest,
     SaveStepTenRequest,
     SaveStepOneRequest,
@@ -65,7 +64,6 @@ from .storage import (
     save_step_four,
     save_step_five,
     save_step_nine,
-    save_step_seven,
     save_step_six,
     save_step_ten,
     save_step_three,
@@ -331,7 +329,7 @@ def api_ai_tools_diagnostics() -> dict:
             "deepseek_text": {
                 "configured": bool(os.environ.get("DEEPSEEK_API_KEY", "").strip()),
                 "default_model": os.environ.get("DEEPSEEK_TEXT_MODEL", "deepseek-v4-pro"),
-                "used_by": ["story-structure", "script-creation", "prompt-generation", "quality-rework", "publish-review"],
+                "used_by": ["story-structure", "script-creation", "prompt-generation", "publish-review"],
             },
             "image_generation": {
                 "configured": bool(os.environ.get("IMAGE_GENERATION_API_KEY", "").strip()),
@@ -485,14 +483,6 @@ def api_save_step_five(project_id: str, payload: SaveStepFiveRequest) -> Project
 @app.put("/api/projects/{project_id}/step-six", response_model=ProjectDetailResponse)
 def api_save_step_six(project_id: str, payload: SaveStepSixRequest) -> ProjectDetailResponse:
     project = save_step_six(project_id, payload)
-    if project is None:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    return ProjectDetailResponse(project=project)
-
-
-@app.put("/api/projects/{project_id}/step-seven", response_model=ProjectDetailResponse)
-def api_save_step_seven(project_id: str, payload: SaveStepSevenRequest) -> ProjectDetailResponse:
-    project = save_step_seven(project_id, payload)
     if project is None:
         raise HTTPException(status_code=404, detail="项目不存在")
     return ProjectDetailResponse(project=project)

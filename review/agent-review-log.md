@@ -351,3 +351,15 @@
   - 已用本地真实项目「七日祭」和目标图 `img-prompt-S01E01_SHOT_01-t2i-1777745392235-0-1777768853880-0` 复测：`prompt_chars=15028`、`context_chars=12681`、`user_edits_chars=2034`，上下文键为 `target_video_source/target_shot/target_prompt/related_image_candidates/qc_reports/style_and_rules/video_settings`。
   - 已通过 `npm --workspace apps/web run build`、`apps/api/.venv/Scripts/python.exe -m pytest`（28 passed）和 `git diff --check`。
 - 发布建议一句话：本轮从前端入参和后端切片两侧修复 S08 视频生成上下文超限，可覆盖当前 68925 chars 报错，并降低批量视频生成前的文本处理负担。
+
+## 2026-05-04 删除步骤07质检返工流程复审
+
+- 审核结论：通过
+- 问题列表：
+  - 已删除步骤 07「质检返工」在后端模型、保存接口、上下文构建、提示词注册和前端类型/API/页面渲染中的主流程入口。
+  - 已将步骤 06 保存后的推进目标改为步骤 08「视频生成」，步骤 08 直接读取步骤 06 入选关键帧，不再读取 `step_seven` 或质检门禁结果。
+  - 已清理当前项目说明、页面任务清单、开发明细、现状盘点和 `docs` 中的步骤 07 专属设计内容，并删除 `docs/step-07-quality-rework-types.md`。
+  - 已保留步骤 10「剪辑成片」里的剪辑质量检查能力；该能力属于成片阶段，不是被删除的步骤 07 画面质检返工流程。
+  - 已保留 `quality-rework -> video-generation` 旧项目兼容映射，防止历史项目停留在旧 StepId 时无法打开。
+  - 已通过 `.venv\Scripts\python.exe -m pytest`（31 passed）、`npm --workspace apps/web run build` 和 `git diff --check`。
+- 发布建议一句话：本轮已移除步骤 07 质检返工流程，主链路变为步骤 06 入选关键帧直接进入步骤 08 视频生成。

@@ -60,11 +60,11 @@ type StepCompletionStatus =
 | `not_started` | 尚未开始 |
 | `in_progress` | 已开始编辑或生成 |
 | `ready_for_review` | 内容初步完成，等待人工确认 |
-| `needs_rework` | 审核或质检后需要返工 |
+| `needs_rework` | 审核或生成结果需要返工 |
 | `completed` | 已完成，可稳定交给下游 |
-| `blocked` | 被上游缺失、质检失败或数据错误阻塞 |
+| `blocked` | 被上游缺失或数据错误阻塞 |
 
-## 11 步建议进度区间
+## 10 步建议进度区间
 
 | 步骤 | `StepId` | 建议整体进度区间 | 完成后建议进度 |
 | --- | --- | --- | --- |
@@ -74,7 +74,6 @@ type StepCompletionStatus =
 | 04 分镜规划 | `storyboard-planning` | 41-50 | 50 |
 | 05 提词生成 | `prompt-generation` | 51-58 | 58 |
 | 06 画面生成 | `image-generation` | 59-66 | 66 |
-| 07 质检返工 | `quality-rework` | 67-74 | 74 |
 | 08 视频生成 | `video-generation` | 75-82 | 82 |
 | 09 音频字幕 | `audio-subtitle` | 83-88 | 88 |
 | 10 剪辑成片 | `final-editing` | 89-95 | 95 |
@@ -111,7 +110,6 @@ type StepCompletionStatus =
 | 04 分镜规划 | 10 |
 | 05 提词生成 | 8 |
 | 06 画面生成 | 8 |
-| 07 质检返工 | 8 |
 | 08 视频生成 | 8 |
 | 09 音频字幕 | 6 |
 | 10 剪辑成片 | 7 |

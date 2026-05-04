@@ -14,7 +14,7 @@
 
 ### 已有模型
 
-- `StepId` 已包含 11 步枚举：`story-structure`、`script-creation`、`asset-setting`、`storyboard-planning`、`prompt-generation`、`image-generation`、`quality-rework`、`video-generation`、`audio-subtitle`、`final-editing`、`publish-review`。
+- `StepId` 已包含 10 步枚举：`story-structure`、`script-creation`、`asset-setting`、`storyboard-planning`、`prompt-generation`、`image-generation`、`video-generation`、`audio-subtitle`、`final-editing`、`publish-review`。
 - `ProjectRecord` 当前已有项目基础字段：`id`、`name`、`status`、`progress`、`cover_style`、`cover_image_url`、`created_at`、`updated_at`、`current_step`。
 - `ProjectRecord` 当前仅持久化两个步骤数据：`step_one: StepOneData`、`step_two: StepTwoData`。
 - `StepOneData` 已覆盖故事架构的最小数据：项目名、核心故事、季集数、导入故事名、项目绑定状态、集数草案。
@@ -37,7 +37,6 @@
 - `step_four: StepFourData`
 - `step_five: StepFiveData`
 - `step_six: StepSixData`
-- `step_seven: StepSevenData`
 - `step_eight: StepEightData`
 - `step_nine: StepNineData`
 - `step_ten: StepTenData`
@@ -150,20 +149,6 @@
 | `asset_links` | `list[ShotAssetLink]` | 图片与镜头编号、提示词版本的绑定关系 | `[]` |
 | `save_meta` | `StepSaveMeta` | 保存状态与版本信息 | 默认对象 |
 
-### 07 质检返工：`step_seven`
-
-建议新增 `StepSevenData`，存储字段：
-
-| 字段 | 类型建议 | 用途 | 默认值 |
-| --- | --- | --- | --- |
-| `quality_checks` | `list[QualityCheckItem]` | 角色、场景、构图、动作、生成错误检查 | `[]` |
-| `rework_reasons` | `list[ReviewIssue]` | 待修问题和返工原因 | `[]` |
-| `repair_suggestions` | `list[ReworkRequest]` | 修复建议与执行方式 | `[]` |
-| `approved_assets` | `list[AssetReference]` | 通过质检的素材 | `[]` |
-| `rejected_assets` | `list[AssetReference]` | 废弃素材 | `[]` |
-| `gate_status` | `str` | 是否允许进入视频生成 | `"未通过"` |
-| `save_meta` | `StepSaveMeta` | 保存状态与版本信息 | 默认对象 |
-
 ### 08 视频生成：`step_eight`
 
 建议新增 `StepEightData`，存储字段：
@@ -259,7 +244,6 @@
 | 04 分镜规划 | `storyboard-planning` | 41-50 |
 | 05 提词生成 | `prompt-generation` | 51-58 |
 | 06 画面生成 | `image-generation` | 59-66 |
-| 07 质检返工 | `quality-rework` | 67-74 |
 | 08 视频生成 | `video-generation` | 75-82 |
 | 09 音频字幕 | `audio-subtitle` | 83-88 |
 | 10 剪辑成片 | `final-editing` | 89-95 |

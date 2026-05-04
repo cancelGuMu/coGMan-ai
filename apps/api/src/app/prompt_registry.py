@@ -477,43 +477,20 @@ PROMPT_TASKS: dict[str, PromptTask] = {
             "只修复用户指定区域；不得改变已通过的脸型、服装、场景、构图和镜头目的。repaint_prompt 和 negative_prompt 必须是纯英文；repaint_prompt 必须包含 shot size、camera angle、composition、focus target、eyeline continuity、prop orientation、information reveal 和 emotional purpose。",
         ),
     ),
-    "S07_IMAGE_QC": PromptTask(
-        task_id="S07_IMAGE_QC",
-        step_id="quality-rework",
-        model_role="multimodal_reviewer",
-        system_prompt=REVIEW_MODEL_SYSTEM,
-        user_instruction="检查图片角色一致性、场景道具、分镜符合性和生成错误。",
-        output_contract=json_contract(
-            '{"overall_status":"总体状态","pass_for_video":true,"issues":[{"severity":"low|medium|high","category":"角色一致性|场景道具|分镜符合性|生成错误","issue":"问题","suggestion":"修复建议","repair_prompt":"返工提示词"}]}',
-            "step_seven.reports[]、step_seven.validation_report",
-            "必须先列问题证据，再给建议；未看到确定图像输出时只能标记待人工复核，不得直接判定通过。",
-        ),
-    ),
-    "S07_REWORK_SUGGESTION": PromptTask(
-        task_id="S07_REWORK_SUGGESTION",
-        step_id="quality-rework",
-        model_role="reviewer",
-        system_prompt=REVIEW_MODEL_SYSTEM,
-        user_instruction="基于质检问题生成返工建议，说明目标步骤和可执行补丁。",
-        output_contract=json_contract(
-            '{"target_step":"image-generation|prompt-generation|asset-setting","action":"返工动作","suggested_prompt_patch":"提示词补丁","suggested_generation_params":"参数建议","keep_terms":["必须保留的元素"]}',
-            "step_seven.rework_tasks[]",
-        ),
-    ),
     "S08_VIDEO_TASK": PromptTask(
         task_id="S08_VIDEO_TASK",
         step_id="video-generation",
         model_role="prompt_engineer",
         system_prompt=PROMPT_ENGINEER_SYSTEM,
         user_instruction=(
-            "组装视频生成任务输入，默认只使用通过质检的素材。"
+            "组装视频生成任务输入，使用步骤六已入选的关键帧素材。"
             "必须继承分镜和 I2V 提示词里的导演意图，明确镜头运动为什么发生、如何承接角色视线、如何揭示信息、如何推进情绪。"
             f"{DIRECTORIAL_GRAMMAR_GUIDE}"
         ),
         output_contract=json_contract(
-            '{"task_type":"i2v","shot_id":"镜头ID","source_asset_ids":["通过质检的图片ID"],"prompt":"视频完整提示词","negative_prompt":"视频负面词","duration_seconds":6,"parameters":"模型参数"}',
+            '{"task_type":"i2v","shot_id":"镜头ID","source_asset_ids":["入选图片ID"],"prompt":"视频完整提示词","negative_prompt":"视频负面词","duration_seconds":6,"parameters":"模型参数"}',
             "视频模型请求体；成功后写入 step_eight.clips[]",
-            "默认只使用 step_seven 已通过的素材；不得越过质检失败素材。prompt 必须是纯英文视频提示词，包含 motivated camera movement、pacing、eyeline continuity、focus transition、information reveal、emotional beat；negative_prompt 必须排除 unmotivated camera movement、random shake、broken eyeline、unclear visual hierarchy、prop presented to audience。",
+            "只使用步骤六已入选的首帧/关键帧素材。prompt 必须是纯英文视频提示词，包含 motivated camera movement、pacing、eyeline continuity、focus transition、information reveal、emotional beat；negative_prompt 必须排除 unmotivated camera movement、random shake、broken eyeline、unclear visual hierarchy、prop presented to audience。",
         ),
     ),
     "S08_VIDEO_QC": PromptTask(
@@ -634,7 +611,7 @@ PROMPT_TASKS: dict[str, PromptTask] = {
         system_prompt=TEXT_MODEL_SYSTEM,
         user_instruction="生成发布复盘报告，包含表现好的元素、需要优化的元素、证据和下一步建议。",
         output_contract=json_contract(
-            '{"review_report":"复盘报告","good_elements":["表现好的元素"],"needs_improvement":["需要优化的元素"],"evidence":["证据"],"retention_analysis":"留存分析","comment_summary":"评论反馈摘要","optimization_tasks":[{"target_step":"story-structure|script-creation|asset-setting|storyboard-planning|prompt-generation|image-generation|quality-rework|video-generation|audio-subtitle|final-editing|publish-review","issue":"问题","suggestion":"建议","priority":"低|中|高"}],"next_episode_suggestions":"下一集或下一季建议"}',
+            '{"review_report":"复盘报告","good_elements":["表现好的元素"],"needs_improvement":["需要优化的元素"],"evidence":["证据"],"retention_analysis":"留存分析","comment_summary":"评论反馈摘要","optimization_tasks":[{"target_step":"story-structure|script-creation|asset-setting|storyboard-planning|prompt-generation|image-generation|video-generation|audio-subtitle|final-editing|publish-review","issue":"问题","suggestion":"建议","priority":"低|中|高"}],"next_episode_suggestions":"下一集或下一季建议"}',
             "step_eleven.review_report、retention_analysis、comment_summary、optimization_tasks、next_episode_suggestions",
             "必须区分真实数据、用户输入和推断；无数据时输出证据缺失而不是编造。",
         ),
@@ -733,7 +710,6 @@ def validate_prompt_registry() -> list[str]:
         "storyboard-planning",
         "prompt-generation",
         "image-generation",
-        "quality-rework",
         "video-generation",
         "audio-subtitle",
         "final-editing",

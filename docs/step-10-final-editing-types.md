@@ -59,13 +59,12 @@ type EditingStepStatus =
 | `video_generation_ref` | `UpstreamStepRef` | 指向步骤 08 视频生成版本。 | 是 | 空引用对象 |
 | `audio_subtitle_ref` | `UpstreamStepRef` | 指向步骤 09 音频字幕版本。 | 是 | 空引用对象 |
 | `storyboard_ref` | `UpstreamStepRef` | 指向步骤 04 分镜规划版本，用于校验镜头顺序和时长。 | 否 | 空引用对象 |
-| `quality_rework_ref` | `UpstreamStepRef` | 指向步骤 07 质检通过素材版本。 | 否 | 空引用对象 |
 | `sync_status` | `"not_synced" \| "synced" \| "outdated"` | 上游数据同步状态。 | 是 | `"not_synced"` |
 | `outdated_reason` | `string \| null` | 上游数据过期原因。 | 否 | `null` |
 
 ```ts
 type UpstreamStepRef = {
-  step_id: "storyboard-planning" | "quality-rework" | "video-generation" | "audio-subtitle";
+  step_id: "storyboard-planning" | "image-generation" | "video-generation" | "audio-subtitle";
   version_id: string | null;
   updated_at: string | null;
 };

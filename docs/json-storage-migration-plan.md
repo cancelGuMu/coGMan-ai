@@ -18,13 +18,12 @@
 - 当前 `current_step` 已支持 11 步枚举。
 - 当前 `storage.py` 已有 `LEGACY_STEP_MAP`，用于旧 stepId 到新 stepId 的映射。
 
-扩展到 11 步后，需要新增：
+扩展到 10 步后，需要新增：
 
 - `step_three`
 - `step_four`
 - `step_five`
 - `step_six`
-- `step_seven`
 - `step_eight`
 - `step_nine`
 - `step_ten`
@@ -67,7 +66,6 @@ step_three: StepThreeData = Field(default_factory=StepThreeData)
 step_four: StepFourData = Field(default_factory=StepFourData)
 step_five: StepFiveData = Field(default_factory=StepFiveData)
 step_six: StepSixData = Field(default_factory=StepSixData)
-step_seven: StepSevenData = Field(default_factory=StepSevenData)
 step_eight: StepEightData = Field(default_factory=StepEightData)
 step_nine: StepNineData = Field(default_factory=StepNineData)
 step_ten: StepTenData = Field(default_factory=StepTenData)

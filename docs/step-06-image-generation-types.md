@@ -4,7 +4,7 @@
 
 ## 1. 设计目标
 
-步骤 06「画面生成」的核心产物是可追溯、可筛选、可入选、可返工的图片素材库。它需要读取步骤 05 的 T2I 提示词和步骤 04 的镜头数据，批量或单镜头生成首帧、关键帧、分镜图，并把最终入选素材交给步骤 07「质检返工」和步骤 08「视频生成」继续使用。
+步骤 06「画面生成」的核心产物是可追溯、可筛选、可入选、可返工的图片素材库。它需要读取步骤 05 的 T2I 提示词和步骤 04 的镜头数据，批量或单镜头生成首帧、关键帧、分镜图，并把最终入选素材交给步骤 08「视频生成」继续使用。
 
 本草案覆盖：
 
@@ -327,9 +327,6 @@ export type ImageGenerationStepData = {
 | `"needs_repair"` | 待修复 | 否 |
 | `"discarded"` | 已废弃 | 否 |
 | `"restored"` | 从废弃恢复 | 否 |
-| `"sent_to_quality"` | 已送质检 | 否 |
-| `"quality_passed"` | 已通过质检 | 否 |
-| `"quality_failed"` | 质检未通过 | 否 |
 
 ### 8.4 `ImageAssetSelectionState`
 
@@ -590,44 +587,19 @@ export type ImageGenerationStepData = {
 
 ---
 
-## 16. 步骤 07 和步骤 08 如何消费图片素材
-
-### 16.1 步骤 07「质检返工」消费方式
-
-步骤 07 应读取：
-
-| 步骤 06 字段 | 质检用途 |
-| --- | --- |
-| `selected_keyframes[]` | 形成待质检素材列表 |
-| `image_assets[].image_url` | 展示和检测图片 |
-| `image_assets[].metadata.character_ref_ids` | 检查角色一致性 |
-| `image_assets[].metadata.scene_ref_id` | 检查场景、光影、时间和氛围 |
-| `image_assets[].metadata.prop_ref_ids` | 检查道具是否正确 |
-| `image_assets[].lineage.source_prompt_snapshot` | 生成返工建议和提示词修订建议 |
-| `image_assets[].quality_flags` | 继承步骤 06 已标记的问题 |
-
-步骤 07 的返回结果建议回写：
-
-| 步骤 07 结果 | 回写到步骤 06 |
-| --- | --- |
-| 通过质检 | `selected_keyframes[].quality_gate_status = "passed"`，`video_ready = true` |
-| 待修复 | `selected_keyframes[].quality_gate_status = "needs_rework"`，对应图片 `status = "needs_repair"` |
-| 未通过 | `selected_keyframes[].quality_gate_status = "failed"`，追加 `quality_flags` |
-
-### 16.2 步骤 08「视频生成」消费方式
+## 16. 步骤 08 如何消费图片素材
 
 步骤 08 应读取：
 
 | 步骤 06 字段 | 视频生成用途 |
 | --- | --- |
 | `selected_keyframes[]` | 获取每个镜头默认关键帧 |
-| `selected_keyframes[].video_ready` | 只默认使用通过质检的素材 |
 | `image_assets[].image_url` | 作为 I2V 首帧、关键帧或首尾帧输入 |
 | `image_assets[].shot_id` | 与步骤 08 视频任务一一绑定 |
 | `image_assets[].metadata.width/height/aspect_ratio` | 校验视频生成比例 |
 | `image_assets[].lineage.source_prompt_snapshot` | 追溯视频素材来源 |
 
-步骤 08 不应默认消费 `status = "discarded"`、`quality_gate_status = "failed"` 或 `video_ready = false` 的素材，除非用户手动覆盖。
+步骤 08 不应默认消费 `status = "discarded"` 或未入选的素材，除非用户手动覆盖。
 
 ---
 

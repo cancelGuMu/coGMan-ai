@@ -378,7 +378,6 @@ type StepIdDraft =
   | "storyboard-planning"
   | "prompt-generation"
   | "image-generation"
-  | "quality-rework"
   | "video-generation"
   | "audio-subtitle"
   | "final-editing"

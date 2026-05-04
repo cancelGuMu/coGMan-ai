@@ -30,12 +30,11 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 01 | 故事架构 | 项目基础档案、故事想法 | 导入文本、平台目标、参考资料 | 世界观、主线、人物关系、季集结构、单集大纲、连续性报告 | 02、03、11 回流 | `ProjectRecord` | 无故事想法时显示空表单和导入入口，不阻塞手动编辑。 |
 | 02 | 剧本创作 | 步骤 01 单集大纲、人物关系、主线目标 | 导入小说、术语库、写作指导、连续性报告 | 剧本文本、结构化对白/旁白、动作、节奏节点、审核意见、版本记录 | 03、04、09、10 | `ProjectRecord` + `GenerationTask` | 缺少大纲时允许手写剧本，但 AI 生成按钮显示缺少上游提示。 |
-| 03 | 资产设定 | 步骤 02 剧本或步骤 01 人物关系/世界观 | 参考图、视觉风格、平台目标 | 角色卡、场景卡、道具卡、风格板、参考图、一致性规则、提示词模板 | 04、05、06、07、09 | `ProjectRecord` + `AssetReference` | 缺少剧本时可从故事人物关系建基础角色卡，资产提取置灰。 |
+| 03 | 资产设定 | 步骤 02 剧本或步骤 01 人物关系/世界观 | 参考图、视觉风格、平台目标 | 角色卡、场景卡、道具卡、风格板、参考图、一致性规则、提示词模板 | 04、05、06、09 | `ProjectRecord` + `AssetReference` | 缺少剧本时可从故事人物关系建基础角色卡，资产提取置灰。 |
 | 04 | 分镜规划 | 步骤 02 正式剧本、步骤 03 角色/场景/道具 | 步骤 02 节奏节点、风格板、连续性报告 | 镜头表、景别角度、构图站位、台词引用、运镜、时长、任务队列 | 05、06、08、09、10 | `ProjectRecord` + `GenerationTask` | 缺少资产时允许拆镜，但角色/场景选择显示未绑定。 |
-| 05 | 提词生成 | 步骤 04 镜头表、步骤 03 资产库/风格板 | 负面词模板、参考图权重、锁定词 | T2I 提示词、I2V 提示词、负面词、参数模板、版本记录 | 06、08、07 返工 | `ProjectRecord` + `GenerationTask` | 缺少资产时可生成基础镜头提示词，但一致性提示为空并给出风险。 |
-| 06 | 画面生成 | 步骤 05 T2I 提示词、步骤 04 镜头表 | 步骤 03 参考图/一致性规则、筛选条件 | 图片生成任务、候选图、入选关键帧、废弃图、图片元数据 | 07、08、10 封面 | `GenerationTask` + `AssetReference` + `ProjectRecord` | 缺少 T2I 时任务面板为空；允许上传手工图片并绑定镜头。 |
-| 07 | 质检返工 | 步骤 06 入选图片、步骤 04 分镜要求、步骤 03 一致性规则 | 步骤 05 负面词、历史返工建议 | 质检报告、问题清单、返工建议、通过素材包 | 08、06 返工、05 提词修订 | `ProjectRecord` + `GenerationTask` + `AssetReference` | 缺少入选图时显示空状态；缺少规则时只做人工质检。 |
-| 08 | 视频生成 | 步骤 07 通过关键帧、步骤 05 I2V 提示词、步骤 04 镜头时长 | 动作参考、姿态参考、首尾帧、运镜参数 | 视频任务、候选视频、失败记录、最终视频片段、视频元数据 | 09、10 | `GenerationTask` + `AssetReference` + `ProjectRecord` | 缺少质检通过图时可手动选择图片，但默认生成入口警告。 |
+| 05 | 提词生成 | 步骤 04 镜头表、步骤 03 资产库/风格板 | 负面词模板、参考图权重、锁定词 | T2I 提示词、I2V 提示词、负面词、参数模板、版本记录 | 06、08 | `ProjectRecord` + `GenerationTask` | 缺少资产时可生成基础镜头提示词，但一致性提示为空并给出风险。 |
+| 06 | 画面生成 | 步骤 05 T2I 提示词、步骤 04 镜头表 | 步骤 03 参考图/一致性规则、筛选条件 | 图片生成任务、候选图、入选关键帧、废弃图、图片元数据 | 08、10 封面 | `GenerationTask` + `AssetReference` + `ProjectRecord` | 缺少 T2I 时任务面板为空；允许上传手工图片并绑定镜头。 |
+| 08 | 视频生成 | 步骤 06 入选关键帧、步骤 05 I2V 提示词、步骤 04 镜头时长 | 动作参考、姿态参考、首尾帧、运镜参数 | 视频任务、候选视频、失败记录、最终视频片段、视频元数据 | 09、10 | `GenerationTask` + `AssetReference` + `ProjectRecord` | 缺少入选关键帧时默认生成入口警告。 |
 | 09 | 音频字幕 | 步骤 02 对白/旁白、步骤 08 最终视频片段 | 步骤 03 角色声音设定、步骤 04 台词镜头映射 | 角色声音、配音任务、音频轨、口型同步、字幕轨、音效、BGM、混音 | 10、11 字幕适配 | `ProjectRecord` + `GenerationTask` + `AssetReference` | 缺少视频时仍可生成配音和字幕草稿；口型同步置灰。 |
 | 10 | 剪辑成片 | 步骤 08 最终视频、步骤 09 音频/字幕、步骤 04 镜头顺序 | 步骤 06 封面候选、步骤 11 平台历史偏好 | 剪辑时间线、对齐配置、导出版本、封面候选、发布素材包 | 11 | `ProjectRecord` + `AssetReference` + `GenerationTask` | 缺少音频时可生成静音时间线；缺少视频时只显示素材缺口清单。 |
 | 11 | 发布复盘 | 步骤 10 成片/封面/素材包 | 平台数据、评论、历史复盘、目标平台 | 发布记录、平台指标、留存分析、复盘报告、优化任务 | 01、02、03、10 下一轮优化 | `ProjectRecord` + `AssetReference` | 缺少真实平台数据时提供手动录入和空报告模板。 |
@@ -122,30 +121,16 @@
 | 读取 | `shots[].shot_id/shot_number` | 强依赖 | `ProjectRecord.step_four` | 候选图按镜头归档。 |
 | 读取 | `references`、`consistency_rules` | 可选增强 | `AssetReference` + `ProjectRecord.step_three` | 参考图和一致性约束。 |
 | 产出 | `image_generation_tasks` | 强依赖 | `GenerationTask` | 保存队列状态、失败原因、重试次数。 |
-| 产出 | `candidate_images`、`selected_keyframes` | 强依赖 | `AssetReference` + `ProjectRecord.step_six` | 质检和视频生成的输入。 |
+| 产出 | `candidate_images`、`selected_keyframes` | 强依赖 | `AssetReference` + `ProjectRecord.step_six` | 视频生成的输入。 |
 | 产出 | `discarded_images`、`image_metadata` | 可选增强 | `AssetReference` + `ProjectRecord.step_six` | 筛选、恢复和追溯使用。 |
 
-降级显示：没有 T2I 提示词时生成按钮置灰并提供跳转步骤 05；允许上传手工图片并绑定 `shot_id`，作为临时关键帧进入质检。
-
-### 3.7 步骤 07「质检返工」
-
-| 分类 | 字段/对象 | 依赖级别 | 来源建议 | 说明 |
-| --- | --- | --- | --- | --- |
-| 读取 | `selected_keyframes`、`image_url` | 强依赖 | `AssetReference` + `ProjectRecord.step_six` | 待质检素材列表。 |
-| 读取 | `shots[].visual_design`、`dialogue_refs` | 强依赖 | `ProjectRecord.step_four` | 检查图片是否符合分镜。 |
-| 读取 | `characters`、`scenes`、`props`、`consistency_rules` | 强依赖 | `ProjectRecord.step_three` | 角色、场景、道具和风格一致性检查。 |
-| 读取 | `negative_prompts`、`prompt_snapshots` | 可选增强 | `ProjectRecord.step_five` | 返工建议和提示词修订。 |
-| 产出 | `quality_reports`、`issues`、`suggestions` | 强依赖 | `ProjectRecord.step_seven` | 通过门禁和返工依据。 |
-| 产出 | `passed_assets`、`needs_rework_assets` | 强依赖 | `ProjectRecord.step_seven` + `AssetReference` | 步骤 08 只默认读取通过素材。 |
-| 任务 | 自动质检、返工任务、重新质检 | 可选增强 | `GenerationTask` | AI 检查和返工运行态。 |
-
-降级显示：没有入选关键帧时显示空质检列表；没有一致性规则时仅启用人工检查和基础生成错误检查。
+降级显示：没有 T2I 提示词时生成按钮置灰并提供跳转步骤 05；允许上传手工图片并绑定 `shot_id`，作为临时关键帧进入视频生成。
 
 ### 3.8 步骤 08「视频生成」
 
 | 分类 | 字段/对象 | 依赖级别 | 来源建议 | 说明 |
 | --- | --- | --- | --- | --- |
-| 读取 | `passed_assets`、`selected_keyframes` | 强依赖 | `ProjectRecord.step_seven` + `AssetReference` | I2V 首帧或关键帧输入。 |
+| 读取 | `selected_keyframes` | 强依赖 | `ProjectRecord.step_six` + `AssetReference` | I2V 首帧或关键帧输入。 |
 | 读取 | `i2v_prompts` | 强依赖 | `ProjectRecord.step_five` | 视频动作、运镜和动态描述。 |
 | 读取 | `shots[].duration`、`camera_motion` | 强依赖 | `ProjectRecord.step_four` | 视频时长与运镜约束。 |
 | 读取 | `action_reference`、`pose_reference` | 可选增强 | `AssetReference` | 动作和姿态辅助。 |
@@ -153,7 +138,7 @@
 | 产出 | `video_candidates`、`final_clips` | 强依赖 | `AssetReference` + `ProjectRecord.step_eight` | 步骤 09 和 10 的视频素材。 |
 | 产出 | `failure_records`、`video_metadata` | 可选增强 | `ProjectRecord.step_eight` | 失败统计和追溯。 |
 
-降级显示：没有质检通过图时默认阻止批量生成；用户手动选择未通过素材时显示风险确认；没有 I2V 提示词时只允许上传视频片段。
+降级显示：没有入选关键帧时默认阻止批量生成；没有 I2V 提示词时只允许上传视频片段。
 
 ### 3.9 步骤 09「音频字幕」
 
@@ -258,7 +243,6 @@
 | 步骤 04 | `step_four.shots`、`shot_order`、`rhythm_stats`、`dialogue_refs` |
 | 步骤 05 | `step_five.t2i_prompts`、`i2v_prompts`、`negative_prompts`、`params` |
 | 步骤 06 | `step_six.selected_keyframes`、`discarded_assets`、`filters`、`selection_records` |
-| 步骤 07 | `step_seven.quality_reports`、`passed_assets`、`rework_suggestions` |
 | 步骤 08 | `step_eight.final_clips`、`failure_records`、`video_metadata` |
 | 步骤 09 | `step_nine.dialogue_lines`、`voice_profiles`、`subtitle_tracks`、`mix_settings` |
 | 步骤 10 | `step_ten.editing_timeline`、`export_versions`、`publish_asset_package` |

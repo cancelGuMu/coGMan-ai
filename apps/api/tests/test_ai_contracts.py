@@ -15,13 +15,11 @@ from app.models import (
     ImageCandidate,
     ProjectRecord,
     PromptItem,
-    QualityReportItem,
     ShotItem,
     StepEightData,
     StepFiveData,
     StepFourData,
     StepOneData,
-    StepSevenData,
     StepSixData,
     StepThreeData,
     StepTwoData,
@@ -410,19 +408,6 @@ def test_video_context_clips_legacy_frontend_prompt_payload() -> None:
                 )
             ]
         ),
-        step_seven=StepSevenData(
-            reports=[
-                QualityReportItem(
-                    id="qc-video",
-                    asset_id="img-video",
-                    shot_label="E1#1",
-                    issue="The frame passes composition checks.",
-                    suggestion="Keep motion subtle and preserve the first frame.",
-                    status="passed",
-                    recheck_result="passed",
-                )
-            ]
-        ),
         step_eight=StepEightData(
             motion_settings="动作：自然推进；环境动态：轻微；运镜：按分镜；时长：跟随镜头。" * 40,
             reference_bindings="首帧绑定 img-video，保持档案架和冷雾一致。" * 40,
@@ -461,7 +446,7 @@ def test_video_context_clips_legacy_frontend_prompt_payload() -> None:
     assert len(bundle.context["user_edits"]) <= 2_100
     assert "target_shot" in bundle.prompt
     assert "target_prompt" in bundle.prompt
-    assert "qc_reports" in bundle.prompt
+    assert "qc_reports" not in bundle.prompt
 
 
 def test_storyboard_and_prompt_context_use_target_slices() -> None:

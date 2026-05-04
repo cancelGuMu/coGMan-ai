@@ -17,7 +17,6 @@ import type {
   StepFiveData,
   StepFourData,
   StepNineData,
-  StepSevenData,
   StepSixData,
   StepTenData,
   StepOneData,
@@ -134,14 +133,6 @@ export async function saveStepFive(projectId: string, data: StepFiveData): Promi
 
 export async function saveStepSix(projectId: string, data: StepSixData): Promise<ProjectRecord> {
   const response = await request<{ project: ProjectRecord }>(`/api/projects/${projectId}/step-six`, {
-    method: "PUT",
-    body: JSON.stringify({ data }),
-  });
-  return response.project;
-}
-
-export async function saveStepSeven(projectId: string, data: StepSevenData): Promise<ProjectRecord> {
-  const response = await request<{ project: ProjectRecord }>(`/api/projects/${projectId}/step-seven`, {
     method: "PUT",
     body: JSON.stringify({ data }),
   });

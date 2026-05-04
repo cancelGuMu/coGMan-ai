@@ -72,7 +72,6 @@
 - `SaveStepFourRequest`
 - `SaveStepFiveRequest`
 - `SaveStepSixRequest`
-- `SaveStepSevenRequest`
 - `SaveStepEightRequest`
 - `SaveStepNineRequest`
 - `SaveStepTenRequest`
@@ -256,51 +255,14 @@
 
 - `200 OK`
 - 返回 `ProjectDetailResponse`
-- 建议更新 `status` 为 `画面生成中` 或 `待质检返工`
-- 建议更新 `current_step` 为 `image-generation` 或 `quality-rework`
+- 建议更新 `status` 为 `画面生成中` 或 `待视频生成`
+- 建议更新 `current_step` 为 `image-generation` 或 `video-generation`
 
 失败状态：
 
 - `404`：项目不存在
 - `422`：请求字段类型不符合模型
 - `400`：候选图引用不存在、同一镜头选中多张互斥关键帧、资产类型不匹配
-- `500`：本地 JSON 保存失败
-
-### 07 质检返工
-
-接口路径：
-
-- `PUT /api/projects/{project_id}/step-seven`
-
-请求模型：
-
-- `SaveStepSevenRequest`
-
-请求体字段：
-
-| 字段 | 类型建议 | 必填 | 用途 |
-| --- | --- | --- | --- |
-| `data.quality_checks` | `list[QualityCheckItem]` | 否 | 角色、场景、构图、动作、生成错误检查 |
-| `data.rework_reasons` | `list[ReviewIssue]` | 否 | 待修问题和返工原因 |
-| `data.repair_suggestions` | `list[ReworkRequest]` | 否 | 修复建议与执行方式 |
-| `data.approved_assets` | `list[AssetReference]` | 否 | 通过质检的素材 |
-| `data.rejected_assets` | `list[AssetReference]` | 否 | 废弃素材 |
-| `data.gate_status` | `str` | 否 | 是否允许进入视频生成 |
-| `data.save_meta` | `StepSaveMeta` | 否 | 保存状态、版本号、最近修改方 |
-
-成功响应：
-
-- `200 OK`
-- 返回 `ProjectDetailResponse`
-- 建议更新 `status` 为 `质检返工中` 或 `待视频生成`
-- 建议 `gate_status` 通过时更新 `current_step` 为 `video-generation`
-
-失败状态：
-
-- `404`：项目不存在
-- `422`：请求字段类型不符合模型
-- `400`：通过素材不属于本项目、质检状态值非法、废弃素材仍被标记为通过
-- `409`：未通过质检却请求推进到视频生成
 - `500`：本地 JSON 保存失败
 
 ### 08 视频生成

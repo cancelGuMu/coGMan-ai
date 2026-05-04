@@ -203,7 +203,6 @@
 | 04 分镜规划 | 自动拆镜、镜头参数补全、时长节奏、下游任务队列、分镜一致性检查 | 深度文本 |
 | 05 提词生成 | T2I、I2V、负面词、参数建议、锁定词、批量替换、提示词质检 | 深度文本 + 快速文本 |
 | 06 画面生成 | 图片生成、候选摘要、局部重绘提示词、选图建议、图片质检 | 图片模型 + 多模态 |
-| 07 质检返工 | 自动质检、问题分类、返工建议、提示词补丁、门禁结论 | 多模态 + 深度文本 |
 | 08 视频生成 | 视频提示词强化、视频生成、失败诊断、重生成策略、视频质检 | 视频模型 + 多模态 |
 | 09 音频字幕 | 台词抽取、声线匹配、配音参数、字幕时间轴、音效/BGM、口型同步 | 音频模型 + 深度文本 |
 | 10 剪辑成片 | 时间线编排、节奏点、剪辑质检、封面标题、平台版本 | 深度文本 + 多模态 |
@@ -980,7 +979,7 @@
     "locked_terms": [],
     "negative_terms": [],
     "reason": "",
-    "used_by_steps": ["prompt-generation", "image-generation", "quality-rework"]
+    "used_by_steps": ["prompt-generation", "image-generation", "video-generation"]
   }
 ]
 ```
@@ -1575,120 +1574,13 @@ T2I 提示词：{{t2i_prompt_record}}
 }
 ```
 
-## 10. 步骤 07：质检返工
-
-### S07-01 图片自动质检
-
-推荐模型：多模态。
-
-约束：
-
-- 检查角色一致性、场景道具、分镜符合性、生成错误。
-- 问题必须绑定 asset_id 和 shot_id。
-- 门禁问题必须 blocking = true。
-
-系统提示词：
-
-```text
-你是 coMGan-ai 的图片质检模型。你的任务是找出进入视频生成前必须修复的问题。
-请严格比对资产设定、分镜要求和提示词，不要只评价美观。
-```
-
-用户提示词：
-
-```text
-请质检图片素材。
-
-图片：{{image_asset}}
-镜头要求：{{shot_json}}
-角色卡：{{characters_json}}
-场景卡：{{scene_json}}
-道具卡：{{props_json}}
-提示词：{{prompt_record}}
-
-输出：
-{
-  "asset_id": "",
-  "shot_id": "",
-  "overall_status": "passed | needs_rework | rejected",
-  "issues": [
-    {
-      "severity": "low | medium | high",
-      "category": "角色一致性 | 场景道具 | 分镜符合性 | 生成错误",
-      "issue": "",
-      "evidence": "",
-      "suggestion": "",
-      "blocking": false
-    }
-  ],
-  "pass_for_video": false
-}
-```
-
-### S07-02 返工建议与提示词补丁
-
-约束：
-
-- 必须说明目标步骤：回到步骤 05 改提示词，还是步骤 06 重绘/重生成。
-- 补丁不能破坏已通过部分。
-
-用户提示词：
-
-```text
-请基于质检问题生成返工建议。
-
-质检问题：{{quality_issues_json}}
-原始提示词：{{prompt_record}}
-生成参数：{{generation_params}}
-资产规则：{{consistency_rules_json}}
-
-输出：
-{
-  "suggestions": [
-    {
-      "target_step": "prompt-generation | image-generation",
-      "action": "regenerate | local_inpaint | prompt_patch | parameter_patch",
-      "suggested_prompt_patch": "",
-      "suggested_generation_params": {},
-      "keep_terms": [],
-      "risk_notes": []
-    }
-  ]
-}
-```
-
-### S07-03 质检门禁结论
-
-约束：
-
-- 只有 passed_assets 可默认进入步骤 08。
-- partial 必须列出可进入和不可进入的素材。
-
-用户提示词：
-
-```text
-请生成视频生成前门禁结论。
-
-图片素材：{{image_assets_json}}
-质检报告：{{quality_reports_json}}
-
-输出：
-{
-  "gate_status": "blocked | partial | passed",
-  "approved_asset_ids_for_video": [],
-  "blocked_asset_ids": [],
-  "gate_reasons": [],
-  "next_actions": []
-}
-```
-
 ## 11. 步骤 08：视频生成
 
 ### S08-01 视频生成任务输入组装
 
 约束：
 
-- 默认只使用步骤 07 通过素材。
+- 默认使用步骤 06 入选关键帧素材。
 - 任务输入必须包含 source_image_url、I2V 提示词、时长、shot_id。
 - 时长限制应在后端二次校验。
 
@@ -1697,7 +1589,7 @@ T2I 提示词：{{t2i_prompt_record}}
 ```text
 请组装视频生成任务输入。
 
-通过关键帧：{{approved_image_asset}}
+入选关键帧：{{selected_keyframe_asset}}
 I2V 提示词：{{i2v_prompt_record}}
 镜头：{{shot_json}}
 视频参数：{{video_params_json}}
@@ -2375,7 +2267,7 @@ I2V 提示词：{{i2v_prompt_record}}
 | 缺剧本 | 步骤 03 可从人物关系生成基础资产，步骤 04 不自动拆镜 |
 | 缺资产库 | 步骤 05 可生成基础镜头提示词，但 warnings 标记一致性风险 |
 | 缺 T2I | 步骤 06 不创建图片生成任务 |
-| 缺通过质检图 | 步骤 08 默认 blocked |
+| 缺入选关键帧 | 步骤 08 默认 blocked |
 | 缺视频片段 | 步骤 09 可生成配音字幕草稿，口型同步 blocked |
 | 缺真实平台数据 | 步骤 11 返回空复盘模板或 needs_input |
 
@@ -2393,7 +2285,7 @@ I2V 提示词：{{i2v_prompt_record}}
 
 ### 15.3 版本记录要求
 
-每次 AI 生成、重生成、批量改写、批量替换、质检返工建议，都应记录：
+每次 AI 生成、重生成、批量改写、批量替换，都应记录：
 
 - `source_step_id`
 - `target_step_id`

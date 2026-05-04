@@ -7,7 +7,6 @@ import type {
   StepFiveData,
   StepFourData,
   StepNineData,
-  StepSevenData,
   StepSixData,
   StepTenData,
   StepThreeData,
@@ -94,7 +93,6 @@ export const workflowSteps: Array<{ id: StepId; label: string }> = [
   { id: "storyboard-planning", label: "04 分镜规划" },
   { id: "prompt-generation", label: "05 提词生成" },
   { id: "image-generation", label: "06 画面生成" },
-  { id: "quality-rework", label: "07 质检返工" },
   { id: "video-generation", label: "08 视频生成" },
   { id: "audio-subtitle", label: "09 音频字幕" },
   { id: "final-editing", label: "10 剪辑成片" },
@@ -171,20 +169,8 @@ export const workflowStepDetails: WorkflowStepDetail[] = [
     summary: "批量生成首帧、关键帧、分镜图和候选图。",
     primary_output: "首帧、关键帧、分镜图、候选图、入选图",
     upstream: "T2I 提示词、资产库、镜头表",
-    downstream: "质检返工、视频生成",
-    status_hint: "先选出稳定关键帧，再进入动态生产。",
-  },
-  {
-    id: "quality-rework",
-    no: "07",
-    label: "07 质检返工",
-    short_title: "质检返工",
-    title: "质检返工",
-    summary: "检查角色、场景、道具、分镜匹配和生成错误，并形成返工建议。",
-    primary_output: "质检报告、问题清单、返工建议、通过素材",
-    upstream: "画面素材、分镜要求、资产一致性规则",
     downstream: "视频生成",
-    status_hint: "只让通过质检的素材进入视频生成。",
+    status_hint: "先选出稳定关键帧，再进入动态生产。",
   },
   {
     id: "video-generation",
@@ -192,9 +178,9 @@ export const workflowStepDetails: WorkflowStepDetail[] = [
     label: "08 视频生成",
     short_title: "视频生成",
     title: "视频生成",
-    summary: "把通过质检的关键帧转成动态镜头视频片段。",
+    summary: "把入选关键帧转成动态镜头视频片段。",
     primary_output: "镜头视频片段、候选版本、失败原因、最终片段",
-    upstream: "通过质检的关键帧、I2V 提示词、镜头时长",
+    upstream: "入选关键帧、I2V 提示词、镜头时长",
     downstream: "音频字幕、剪辑成片",
     status_hint: "为剪辑阶段准备可追溯的视频片段。",
   },
@@ -363,17 +349,6 @@ export function defaultStepSixData(): StepSixData {
   };
 }
 
-export function defaultStepSevenData(): StepSevenData {
-  return {
-    selected_asset_id: "",
-    reports: [],
-    rework_tasks: [],
-    checklist_note: "角色一致性、场景道具、分镜符合性、生成错误四类检查项待执行。",
-    export_text: "",
-    validation_report: "",
-  };
-}
-
 export function defaultStepEightData(): StepEightData {
   return {
     selected_clip_id: "",
@@ -436,7 +411,6 @@ export function mergeProjectDefaults(project: ProjectRecord): ProjectRecord {
   const stepFourDefaults = defaultStepFourData();
   const stepFiveDefaults = defaultStepFiveData();
   const stepSixDefaults = defaultStepSixData();
-  const stepSevenDefaults = defaultStepSevenData();
   const stepEightDefaults = defaultStepEightData();
   const stepNineDefaults = defaultStepNineData();
   const stepTenDefaults = defaultStepTenData();
@@ -485,10 +459,6 @@ export function mergeProjectDefaults(project: ProjectRecord): ProjectRecord {
         repaint_instruction: candidate.repaint_instruction ?? "",
         repaint_prompt: candidate.repaint_prompt ?? "",
       })),
-    },
-    step_seven: {
-      ...stepSevenDefaults,
-      ...(project.step_seven ?? stepSevenDefaults),
     },
     step_eight: {
       ...stepEightDefaults,
