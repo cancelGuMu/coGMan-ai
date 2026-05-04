@@ -5944,19 +5944,31 @@ function StepEightSection({
   const [form, setForm] = useState<StepEightData>(project.step_eight);
   const [saving, setSaving] = useState(false);
   const [videoGenerationAction, setVideoGenerationAction] = useState<string | null>(null);
+  const [selectedVideoSourceId, setSelectedVideoSourceId] = useState("");
   useEffect(() => setForm(project.step_eight), [project.step_eight]);
   const usableImages = project.step_six.candidates.filter((item) => item.status === "selected" || item.status === "first-frame" || item.status === "keyframe");
+  useEffect(() => {
+    if (!usableImages.length) {
+      setSelectedVideoSourceId("");
+      return;
+    }
+    if (!usableImages.some((item) => item.id === selectedVideoSourceId)) {
+      setSelectedVideoSourceId(usableImages[0].id);
+    }
+  }, [usableImages, selectedVideoSourceId]);
   const visibleClips = form.clips.filter((item) => !form.filter_text || item.shot_label.includes(form.filter_text) || item.status.includes(form.filter_text));
 
   async function generateVideos(scope: "single" | "batch") {
     if (videoGenerationAction) return;
-    const targets = scope === "single" ? usableImages.slice(0, 1) : usableImages;
+    const selectedTarget = usableImages.find((item) => item.id === selectedVideoSourceId);
+    const targets = scope === "single" ? (selectedTarget ? [selectedTarget] : []) : usableImages;
     if (!targets.length) {
-      setStatusMessage("请先在步骤六生成并选择关键帧。");
+      setStatusMessage(scope === "single" ? "请先选择要生成视频的分镜/关键帧。" : "请先在步骤六生成并选择关键帧。");
       return;
     }
     setVideoGenerationAction(scope);
-    setStatusMessage(`正在提交 ${targets.length} 个 MiniMax 视频生成任务...`);
+    const targetLabel = scope === "single" ? targets[0].shot_label : `${targets.length} 个入选分镜`;
+    setStatusMessage(`正在为 ${targetLabel} 提交 MiniMax 视频生成任务...`);
     try {
       const clips: VideoClipItem[] = [];
       for (let index = 0; index < targets.length; index += 1) {
@@ -6001,11 +6013,11 @@ function StepEightSection({
           fail_reason: "",
           regeneration_strategy: "缩短时长、保持首帧、降低动作幅度",
           version: `v${form.clips.length + index + 1}`,
-          metadata: `${result.provider} / ${result.model}；${result.metadata}；任务状态：${result.status}`,
+          metadata: `${result.provider} / ${result.model}；${image.shot_label}；源关键帧=${image.id}；${result.metadata}；任务状态：${result.status}`,
         });
       }
       setForm((current) => ({ ...current, clips: [...current.clips, ...clips], selected_clip_id: clips[0]?.id ?? current.selected_clip_id }));
-      setStatusMessage(`已提交 ${clips.length} 个 MiniMax 视频生成任务。`);
+      setStatusMessage(scope === "single" ? `已为 ${clips[0]?.shot_label || targetLabel} 提交 MiniMax 视频生成任务。` : `已提交 ${clips.length} 个 MiniMax 视频生成任务。`);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "视频生成任务提交失败");
     } finally {
@@ -6127,8 +6139,16 @@ function StepEightSection({
       </div>
       <div className="action-row">
         <input value={form.filter_text} onChange={(event) => setForm({ ...form, filter_text: event.target.value })} placeholder="筛选镜头/状态" />
+        <label className="video-shot-selector">
+          <span>生成分镜</span>
+          <select value={selectedVideoSourceId} onChange={(event) => setSelectedVideoSourceId(event.target.value)} disabled={!usableImages.length || Boolean(videoGenerationAction)}>
+            {usableImages.length ? usableImages.map((image) => (
+              <option value={image.id} key={image.id}>{image.shot_label} · {image.status}</option>
+            )) : <option value="">暂无入选关键帧</option>}
+          </select>
+        </label>
         <AIActionButton className="primary-pill inline-pill" isGenerating={videoGenerationAction === "batch"} disabled={Boolean(videoGenerationAction)} loadingLabel="视频批量提交中" onClick={() => void generateVideos("batch")}>批量生成视频</AIActionButton>
-        <AIActionButton isGenerating={videoGenerationAction === "single"} disabled={Boolean(videoGenerationAction)} loadingLabel="单镜提交中" onClick={() => void generateVideos("single")}>单镜视频</AIActionButton>
+        <AIActionButton isGenerating={videoGenerationAction === "single"} disabled={Boolean(videoGenerationAction) || !selectedVideoSourceId} loadingLabel="单镜提交中" onClick={() => void generateVideos("single")}>生成所选分镜</AIActionButton>
         <button className="ghost-button inline-button" type="button" onClick={checkIntegrity}>完整性检查</button>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存视频"}</button>
       </div>

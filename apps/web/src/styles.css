@@ -3639,6 +3639,20 @@ select:focus {
   color: #f3dcac;
 }
 
+.video-shot-selector {
+  display: grid;
+  gap: 5px;
+  min-width: min(280px, 100%);
+  color: #c7b48c;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.video-shot-selector select {
+  width: 100%;
+  min-height: 42px;
+}
+
 .repaint-field {
   min-width: 0;
   margin: 0;
