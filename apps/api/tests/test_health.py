@@ -10,3 +10,8 @@ def test_healthz() -> None:
     response = client.get("/healthz")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_generated_video_media_mount() -> None:
+    routes = {getattr(route, "path", "") for route in client.app.routes}
+    assert "/media/generated-videos" in routes

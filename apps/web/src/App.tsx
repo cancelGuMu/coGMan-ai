@@ -5958,6 +5958,11 @@ function StepEightSection({
   }, [usableImages, selectedVideoSourceId]);
   const visibleClips = form.clips.filter((item) => !form.filter_text || item.shot_label.includes(form.filter_text) || item.status.includes(form.filter_text));
 
+  async function persistStepEight(nextForm: StepEightData, message: string) {
+    const saved = await saveStepEight(project.id, nextForm);
+    onSaved(saved, message);
+  }
+
   async function generateVideos(scope: "single" | "batch") {
     if (videoGenerationAction) return;
     const selectedTarget = usableImages.find((item) => item.id === selectedVideoSourceId);
@@ -6016,8 +6021,10 @@ function StepEightSection({
           metadata: `${result.provider} / ${result.model}；${image.shot_label}；源关键帧=${image.id}；${result.metadata}；任务状态：${result.status}`,
         });
       }
-      setForm((current) => ({ ...current, clips: [...current.clips, ...clips], selected_clip_id: clips[0]?.id ?? current.selected_clip_id }));
-      setStatusMessage(scope === "single" ? `已为 ${clips[0]?.shot_label || targetLabel} 提交 MiniMax 视频生成任务。` : `已提交 ${clips.length} 个 MiniMax 视频生成任务。`);
+      const nextForm = { ...form, clips: [...form.clips, ...clips], selected_clip_id: clips[0]?.id ?? form.selected_clip_id };
+      setForm(nextForm);
+      const successMessage = scope === "single" ? `已为 ${clips[0]?.shot_label || targetLabel} 提交 MiniMax 视频生成任务，并已保存。` : `已提交 ${clips.length} 个 MiniMax 视频生成任务，并已保存。`;
+      await persistStepEight(nextForm, successMessage);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "视频生成任务提交失败");
     } finally {
@@ -6056,8 +6063,9 @@ function StepEightSection({
         url: "",
         metadata: `${result.provider} / ${result.model}；${result.metadata}；任务状态：${result.status}；重生成策略：${clip.regeneration_strategy}`,
       };
-      setForm((current) => ({ ...current, clips: [...current.clips, next] }));
-      setStatusMessage("已重新提交 MiniMax 视频生成任务，并保留旧版本。");
+      const nextForm = { ...form, clips: [...form.clips, next] };
+      setForm(nextForm);
+      await persistStepEight(nextForm, "已重新提交 MiniMax 视频生成任务并保存，旧版本已保留。");
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "视频重生成提交失败");
     } finally {
@@ -6094,13 +6102,15 @@ function StepEightSection({
                 : "";
       const failedReason = textValue(task.error_message, textValue(task.fail_reason, textValue(task.message)));
       const nextStatus: VideoClipItem["status"] = downloadUrl || status === "success" ? "candidate" : status === "failed" || status === "fail" ? "failed" : "processing";
-      updateClip(clip.id, {
+      const patch: Partial<VideoClipItem> = {
         url: downloadUrl || clip.url,
         status: nextStatus,
         fail_reason: nextStatus === "failed" ? (failedReason || clip.fail_reason || "MiniMax 返回失败状态") : clip.fail_reason,
         metadata: `${clip.metadata}；查询状态：${rawStatus}${downloadUrl ? "；已回填视频下载地址" : ""}${failedReason ? `；失败原因：${failedReason}` : ""}`,
-      });
-      setStatusMessage(downloadUrl ? "视频任务已完成，已回填下载地址。" : nextStatus === "failed" ? `视频任务失败：${failedReason || "MiniMax 返回失败状态"}` : `视频任务仍在处理中：${rawStatus}`);
+      };
+      const nextForm = { ...form, clips: form.clips.map((item) => item.id === clip.id ? { ...item, ...patch } : item) };
+      setForm(nextForm);
+      await persistStepEight(nextForm, downloadUrl ? "视频任务已完成，已回填下载地址并保存。" : nextStatus === "failed" ? `视频任务失败并已保存：${failedReason || "MiniMax 返回失败状态"}` : `视频任务仍在处理中并已保存：${rawStatus}`);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "视频任务查询失败");
     } finally {

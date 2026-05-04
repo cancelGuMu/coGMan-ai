@@ -11,6 +11,7 @@ from zipfile import BadZipFile, ZipFile
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .models import (
     CreateProjectRequest,
@@ -76,6 +77,7 @@ from .storage import (
 MAX_IMPORT_BYTES = 8 * 1024 * 1024
 MAX_IMPORT_TEXT_CHARS = 180_000
 DASHBOARD_DATA_FILE = Path(__file__).resolve().parents[2] / "data" / "dashboard.json"
+GENERATED_VIDEO_DIR = Path(__file__).resolve().parents[4] / "outputs" / "generated_videos"
 TEXT_IMPORT_SUFFIXES = {
     ".txt",
     ".md",
@@ -148,6 +150,8 @@ DASHBOARD_FALLBACK = {
 
 
 app = FastAPI(title="coGMan-ai API", version="0.1.0")
+GENERATED_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/media/generated-videos", StaticFiles(directory=GENERATED_VIDEO_DIR), name="generated-videos")
 
 app.add_middleware(
     CORSMiddleware,
