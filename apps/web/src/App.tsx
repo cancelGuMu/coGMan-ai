@@ -64,6 +64,7 @@ import type {
   ProjectSummary,
   ScriptRhythmNode,
   ShotItem,
+  SubtitleCue,
   StepCompletionStatus,
   StepEightData,
   StepElevenData,
@@ -256,6 +257,32 @@ function modelPromptFieldsContainCjk(parsed: Record<string, unknown>, mode: "t2i
       ? ["positive_prompt", "negative_prompt", "parameters", "locked_terms"]
       : ["motion_prompt", "camera_prompt", "full_prompt", "negative_prompt", "parameters", "locked_terms"];
   return fields.some((field) => modelPromptCjkPattern.test(textValue(parsed[field])));
+}
+
+function buildSubtitleVtt(cues: SubtitleCue[]) {
+  const formatTime = (seconds: number) => {
+    const safeSeconds = Math.max(0, Number.isFinite(seconds) ? seconds : 0);
+    const hours = Math.floor(safeSeconds / 3600);
+    const minutes = Math.floor((safeSeconds % 3600) / 60);
+    const wholeSeconds = Math.floor(safeSeconds % 60);
+    const milliseconds = Math.round((safeSeconds - Math.floor(safeSeconds)) * 1000);
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(wholeSeconds).padStart(2, "0")}.${String(milliseconds).padStart(3, "0")}`;
+  };
+  return [
+    "WEBVTT",
+    "",
+    ...cues.map((cue, index) => [
+      String(index + 1),
+      `${formatTime(cue.start_seconds)} --> ${formatTime(Math.max(cue.end_seconds, cue.start_seconds + 0.5))}`,
+      cue.text,
+      "",
+    ].join("\n")),
+  ].join("\n");
+}
+
+function buildSubtitleTrackUrl(cues: SubtitleCue[]) {
+  if (!cues.length) return "";
+  return `data:text/vtt;charset=utf-8,${encodeURIComponent(buildSubtitleVtt(cues))}`;
 }
 
 const directorGrammarGuide = [
@@ -6282,6 +6309,34 @@ function StepNineSection({
   }, [project.step_four.shots, selectedAudioShotId]);
   const selectedAudioShot = project.step_four.shots.find((shot) => shot.id === selectedAudioShotId);
   const selectedAudioShotLabel = selectedAudioShot ? `第${selectedAudioShot.episode_number}集 #${selectedAudioShot.shot_number}` : "所选分镜";
+  const previewLines = form.dialogue_lines.filter((line) => line.shot_id === selectedAudioShotId);
+  const previewSubtitles = form.subtitle_cues
+    .filter((cue) => cue.shot_id === selectedAudioShotId)
+    .sort((left, right) => left.start_seconds - right.start_seconds);
+  const previewClip =
+    project.step_eight.clips.find((clip) => clip.shot_id === selectedAudioShotId && clip.status === "final" && clip.url) ||
+    project.step_eight.clips.find((clip) => clip.shot_id === selectedAudioShotId && clip.url);
+  const previewTrackUrl = buildSubtitleTrackUrl(previewSubtitles);
+  const previewAudioText = previewLines.map((line) => `${line.speaker}：${line.text}`).join("。");
+  const previewSoundEffects = form.sound_effects.filter((item) => item.shot_label.includes(selectedAudioShotLabel));
+
+  function previewSpeech(line?: DialogueLine) {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      setStatusMessage("当前浏览器不支持本地朗读预览。");
+      return;
+    }
+    const text = line ? `${line.speaker}，${line.text}` : previewAudioText;
+    if (!text.trim()) {
+      setStatusMessage("所选分镜还没有可朗读的配音/旁白文本。");
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "zh-CN";
+    utterance.rate = 0.95;
+    window.speechSynthesis.speak(utterance);
+    setStatusMessage(line ? `正在朗读预览：${line.shot_label} / ${line.speaker}` : `正在朗读预览：${selectedAudioShotLabel}`);
+  }
 
   async function extractDialogue(scope: "single" | "batch") {
     if (audioAction) return;
@@ -6545,6 +6600,62 @@ function StepNineSection({
         <label className="field-label"><span>混音参数</span><textarea value={form.mix_settings} onChange={(event) => setForm({ ...form, mix_settings: event.target.value })} /></label>
       </div>
       {form.validation_report ? <div className="hint-text">{form.validation_report}</div> : null}
+      <div className="audio-subtitle-preview">
+        <div className="audio-preview-stage">
+          <div className={`video-online-preview ${previewClip?.url ? "is-ready" : ""}`}>
+            {previewClip?.url ? (
+              <video controls preload="metadata" src={previewClip.url} key={`${previewClip.id}-${previewTrackUrl}`}>
+                {previewTrackUrl ? <track kind="subtitles" srcLang="zh-CN" label="中文字幕" src={previewTrackUrl} default /> : null}
+                当前浏览器无法播放该视频。
+              </video>
+            ) : (
+              <div className="video-online-placeholder">
+                <strong>暂无可预览视频</strong>
+                <span>步骤八为该分镜生成视频后，这里会叠加字幕轨道预览。</span>
+              </div>
+            )}
+          </div>
+          <div className="preview-subtitle-strip">
+            <strong>{selectedAudioShotLabel}</strong>
+            <span>{previewSubtitles[0]?.text || previewLines[0]?.text || "所选分镜还没有字幕或台词。"}</span>
+          </div>
+        </div>
+        <div className="audio-preview-panel">
+          <div className="preview-panel-head">
+            <strong>配音/旁白预览</strong>
+            <button className="ghost-mini-button" type="button" onClick={() => previewSpeech()} disabled={!previewLines.length}>朗读所选分镜</button>
+          </div>
+          <div className="audio-preview-list">
+            {previewLines.length ? previewLines.map((line) => (
+              <article className="audio-preview-line" key={line.id}>
+                <div>
+                  <strong>{line.speaker}</strong>
+                  <span>{line.emotion} / {line.audio_status === "generated" ? "已生成规划" : "待生成规划"} / 停顿 {line.pause_seconds}s</span>
+                </div>
+                <p>{line.text}</p>
+                <button className="ghost-mini-button" type="button" onClick={() => previewSpeech(line)}>朗读</button>
+              </article>
+            )) : (
+              <div className="video-online-placeholder compact-placeholder">
+                <strong>暂无配音/旁白文本</strong>
+                <span>先提取所选台词，再生成配音或旁白规划。</span>
+              </div>
+            )}
+          </div>
+          <div className="subtitle-cue-list">
+            <strong>字幕时间轴</strong>
+            {previewSubtitles.length ? previewSubtitles.map((cue) => (
+              <span key={cue.id}>{cue.start_seconds.toFixed(1)}s - {cue.end_seconds.toFixed(1)}s：{cue.text}</span>
+            )) : <span>暂无字幕时间轴。</span>}
+          </div>
+          <div className="subtitle-cue-list">
+            <strong>音效建议</strong>
+            {previewSoundEffects.length ? previewSoundEffects.map((effect) => (
+              <span key={effect.id}>{effect.type} / {effect.volume}%：{effect.description}</span>
+            )) : <span>暂无该分镜音效建议。</span>}
+          </div>
+        </div>
+      </div>
       <div className="production-grid">
         {form.dialogue_lines.map((line) => (
           <article className="panel-card production-card" key={line.id}>
