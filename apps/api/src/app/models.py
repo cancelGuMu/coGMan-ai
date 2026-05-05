@@ -352,6 +352,8 @@ class ExportVersion(BaseModel):
     format: Literal["横版", "竖版", "预告版", "正片版"] = "正片版"
     status: Literal["draft", "queued", "exported"] = "draft"
     settings: str = ""
+    url: str = ""
+    metadata: str = ""
 
 
 class CoverCandidate(BaseModel):
@@ -472,6 +474,13 @@ class ProjectDetailResponse(BaseModel):
 
 class ProjectDeleteResponse(BaseModel):
     success: bool = True
+
+
+class JianyingProjectExportResponse(BaseModel):
+    url: str
+    filename: str
+    status: str = "exported"
+    metadata: str = ""
 
 
 class SaveStepOneRequest(BaseModel):

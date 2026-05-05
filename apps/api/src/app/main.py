@@ -4,9 +4,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 import base64
+import json
 import os
 from pathlib import Path
 import re
+from uuid import uuid4
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
@@ -23,6 +25,7 @@ from .models import (
     GeneratedVideoResponse,
     GenerationRequest,
     ImageGenerationRequest,
+    JianyingProjectExportResponse,
     ProjectDetailResponse,
     ProjectDeleteResponse,
     ProjectListResponse,
@@ -84,6 +87,7 @@ DASHBOARD_DATA_FILE = Path(__file__).resolve().parents[2] / "data" / "dashboard.
 OUTPUTS_DIR = Path(__file__).resolve().parents[4] / "outputs"
 GENERATED_VIDEO_DIR = OUTPUTS_DIR / "generated_videos"
 GENERATED_AUDIO_DIR = OUTPUTS_DIR / "generated_audio"
+JIANYING_EXPORT_DIR = OUTPUTS_DIR / "jianying_exports"
 TEXT_IMPORT_SUFFIXES = {
     ".txt",
     ".md",
@@ -158,8 +162,10 @@ DASHBOARD_FALLBACK = {
 app = FastAPI(title="coGMan-ai API", version="0.1.0")
 GENERATED_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 GENERATED_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+JIANYING_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/media/generated-videos", StaticFiles(directory=GENERATED_VIDEO_DIR), name="generated-videos")
 app.mount("/media/generated-audio", StaticFiles(directory=GENERATED_AUDIO_DIR), name="generated-audio")
+app.mount("/media/jianying-exports", StaticFiles(directory=JIANYING_EXPORT_DIR), name="jianying-exports")
 
 app.add_middleware(
     CORSMiddleware,
@@ -201,6 +207,223 @@ def _store_generated_audio_url(audio_url: str, line_id: str) -> str:
     target = GENERATED_AUDIO_DIR / filename
     target.write_bytes(base64.b64decode(encoded))
     return f"http://127.0.0.1:8000/media/generated-audio/{filename}"
+
+
+def _safe_filename(value: str, fallback: str = "project") -> str:
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-")
+    return safe[:80] or fallback
+
+
+def _seconds_to_microseconds(value: float | int) -> int:
+    return max(0, int(float(value) * 1_000_000))
+
+
+def _build_jianying_project_archive(project_id: str) -> JianyingProjectExportResponse:
+    project = get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    final_video_by_shot: dict[str, object] = {}
+    fallback_video_by_shot: dict[str, object] = {}
+    for clip in project.step_eight.clips:
+        if not clip.url:
+            continue
+        fallback_video_by_shot.setdefault(clip.shot_id, clip)
+        if clip.status == "final":
+            final_video_by_shot[clip.shot_id] = clip
+    video_by_id = {clip.id: clip for clip in project.step_eight.clips if clip.url}
+    audio_by_id = {line.id: line for line in project.step_nine.dialogue_lines if line.audio_url}
+    subtitle_by_id = {cue.id: cue for cue in project.step_nine.subtitle_cues}
+
+    timeline_clips = project.step_ten.timeline_clips
+    if not timeline_clips:
+        current = 0.0
+        inferred_clips = []
+        for index, shot in enumerate(project.step_four.shots):
+            source = final_video_by_shot.get(shot.id) or fallback_video_by_shot.get(shot.id)
+            if source is None:
+                continue
+            duration = max(1, getattr(source, "duration_seconds", 5) or 5)
+            inferred_clips.append(
+                {
+                    "id": f"tl-auto-{shot.id or index}",
+                    "track": "video",
+                    "name": shot.scene or getattr(source, "shot_label", "") or f"Shot {index + 1}",
+                    "source_id": getattr(source, "id", ""),
+                    "start_seconds": current,
+                    "end_seconds": current + duration,
+                    "transition": "hard cut",
+                    "notes": "Auto-filled from step eight because step ten timeline is empty.",
+                }
+            )
+            current += duration
+        timeline_items = inferred_clips
+    else:
+        timeline_items = [clip.model_dump(mode="json") for clip in timeline_clips]
+
+    video_materials = []
+    audio_materials = []
+    text_materials = []
+    asset_manifest = []
+    tracks = {
+        "video": {"type": "video", "segments": []},
+        "audio": {"type": "audio", "segments": []},
+        "text": {"type": "text", "segments": []},
+    }
+
+    for clip in project.step_eight.clips:
+        if not clip.url:
+            continue
+        video_materials.append(
+            {
+                "id": clip.id,
+                "type": "video",
+                "path": clip.url,
+                "duration": _seconds_to_microseconds(clip.duration_seconds),
+                "shot_id": clip.shot_id,
+                "shot_label": clip.shot_label,
+                "status": clip.status,
+            }
+        )
+        asset_manifest.append({"id": clip.id, "kind": "video", "shot_id": clip.shot_id, "url": clip.url})
+
+    for line in project.step_nine.dialogue_lines:
+        if not line.audio_url:
+            continue
+        audio_materials.append(
+            {
+                "id": line.id,
+                "type": "audio",
+                "path": line.audio_url,
+                "speaker": line.speaker,
+                "shot_id": line.shot_id,
+                "voice_id": line.voice_id,
+            }
+        )
+        asset_manifest.append({"id": line.id, "kind": "audio", "shot_id": line.shot_id, "url": line.audio_url})
+
+    for cue in project.step_nine.subtitle_cues:
+        text_materials.append(
+            {
+                "id": cue.id,
+                "type": "text",
+                "text": cue.text,
+                "shot_id": cue.shot_id,
+                "start": _seconds_to_microseconds(cue.start_seconds),
+                "duration": _seconds_to_microseconds(cue.end_seconds - cue.start_seconds),
+            }
+        )
+
+    for index, clip in enumerate(timeline_items):
+        track = str(clip.get("track", "video"))
+        start = float(clip.get("start_seconds", index * 3) or 0)
+        end = max(start + 0.1, float(clip.get("end_seconds", start + 3) or start + 3))
+        source_id = str(clip.get("source_id", ""))
+        material_id = source_id
+        source = video_by_id.get(source_id) if track == "video" else audio_by_id.get(source_id)
+        if source is None and track == "video":
+            shot_id = source_id or str(clip.get("shot_id", ""))
+            source = final_video_by_shot.get(shot_id) or fallback_video_by_shot.get(shot_id)
+            material_id = getattr(source, "id", material_id) if source else material_id
+        if track == "subtitle":
+            source = subtitle_by_id.get(source_id)
+        segment = {
+            "id": str(clip.get("id", f"segment-{index}")),
+            "material_id": material_id,
+            "source_id": source_id,
+            "target_timerange": {"start": _seconds_to_microseconds(start), "duration": _seconds_to_microseconds(end - start)},
+            "source_timerange": {"start": 0, "duration": _seconds_to_microseconds(end - start)},
+            "name": str(clip.get("name", "")),
+            "transition": str(clip.get("transition", "")),
+            "notes": str(clip.get("notes", "")),
+        }
+        if track == "audio":
+            tracks["audio"]["segments"].append(segment)
+        elif track == "subtitle":
+            segment["text"] = getattr(source, "text", "") if source else str(clip.get("name", ""))
+            tracks["text"]["segments"].append(segment)
+        else:
+            tracks["video"]["segments"].append(segment)
+
+    if not tracks["audio"]["segments"]:
+        for index, line in enumerate(project.step_nine.dialogue_lines):
+            if not line.audio_url:
+                continue
+            start = sum(max(0.5, cue.end_seconds - cue.start_seconds) for cue in project.step_nine.subtitle_cues[:index])
+            tracks["audio"]["segments"].append(
+                {
+                    "id": f"audio-{line.id}",
+                    "material_id": line.id,
+                    "source_id": line.id,
+                    "target_timerange": {"start": _seconds_to_microseconds(start), "duration": _seconds_to_microseconds(max(1, len(line.text) / 4))},
+                    "source_timerange": {"start": 0, "duration": _seconds_to_microseconds(max(1, len(line.text) / 4))},
+                    "name": f"{line.speaker}: {line.text[:24]}",
+                }
+            )
+
+    if not tracks["text"]["segments"]:
+        for cue in project.step_nine.subtitle_cues:
+            tracks["text"]["segments"].append(
+                {
+                    "id": cue.id,
+                    "material_id": cue.id,
+                    "source_id": cue.id,
+                    "target_timerange": {"start": _seconds_to_microseconds(cue.start_seconds), "duration": _seconds_to_microseconds(cue.end_seconds - cue.start_seconds)},
+                    "source_timerange": {"start": 0, "duration": _seconds_to_microseconds(cue.end_seconds - cue.start_seconds)},
+                    "text": cue.text,
+                    "name": cue.text[:24],
+                }
+            )
+
+    now = datetime.now()
+    duration_us = max(
+        [0]
+        + [
+            int(segment["target_timerange"]["start"]) + int(segment["target_timerange"]["duration"])
+            for track in tracks.values()
+            for segment in track["segments"]
+        ]
+    )
+    draft_id = uuid4().hex
+    draft_content = {
+        "version": "coGMan-ai-jianying-draft-v1",
+        "draft_id": draft_id,
+        "draft_name": project.name,
+        "canvas_config": {"ratio": "16:9", "width": 1920, "height": 1080},
+        "materials": {"videos": video_materials, "audios": audio_materials, "texts": text_materials},
+        "tracks": [track for track in tracks.values() if track["segments"]],
+        "transition_settings": project.step_ten.transition_settings,
+        "package_checklist": project.step_ten.package_checklist,
+    }
+    draft_meta = {
+        "draft_id": draft_id,
+        "draft_name": project.name,
+        "draft_fold_path": "",
+        "draft_root_path": "",
+        "tm_draft_create": int(now.timestamp() * 1000),
+        "tm_draft_modified": int(now.timestamp() * 1000),
+        "draft_duration": duration_us,
+        "draft_materials": asset_manifest,
+    }
+    readme = (
+        "coGMan-ai exported Jianying/CapCut draft package.\n"
+        "This archive contains draft_content.json, draft_meta_info.json and assets_manifest.json.\n"
+        "If Jianying cannot import the archive directly, create a new Jianying draft folder and copy these JSON files into it, then relink assets from the manifest.\n"
+    )
+    filename = f"{_safe_filename(project.name)}-jianying-{int(now.timestamp() * 1000)}.zip"
+    target = JIANYING_EXPORT_DIR / filename
+    with ZipFile(target, "w") as archive:
+        archive.writestr("draft_content.json", json.dumps(draft_content, ensure_ascii=False, indent=2))
+        archive.writestr("draft_meta_info.json", json.dumps(draft_meta, ensure_ascii=False, indent=2))
+        archive.writestr("assets_manifest.json", json.dumps(asset_manifest, ensure_ascii=False, indent=2))
+        archive.writestr("README.txt", readme)
+
+    metadata = f"剪映工程包；视频素材 {len(video_materials)}；音频素材 {len(audio_materials)}；字幕 {len(text_materials)}；时长 {round(duration_us / 1_000_000, 2)}s"
+    return JianyingProjectExportResponse(
+        url=f"http://127.0.0.1:8000/media/jianying-exports/{filename}",
+        filename=filename,
+        metadata=metadata,
+    )
 
 
 def _normalize_import_text(text: str) -> str:
@@ -545,6 +768,11 @@ def api_save_step_ten(project_id: str, payload: SaveStepTenRequest) -> ProjectDe
     if project is None:
         raise HTTPException(status_code=404, detail="项目不存在")
     return ProjectDetailResponse(project=project)
+
+
+@app.post("/api/export/jianying-project/{project_id}", response_model=JianyingProjectExportResponse)
+def api_export_jianying_project(project_id: str) -> JianyingProjectExportResponse:
+    return _build_jianying_project_archive(project_id)
 
 
 @app.put("/api/projects/{project_id}/step-eleven", response_model=ProjectDetailResponse)

@@ -18,6 +18,7 @@ import {
   fetchProject,
   fetchProjects,
   fetchVideoTaskStatus,
+  exportJianyingProject,
   generateImageCandidate,
   generateAudioCandidate,
   generateStepOneOutline,
@@ -6908,7 +6909,7 @@ function StepTenSection({
           };
         })
         .filter((item): item is TimelineClip => Boolean(item));
-      const exportVersions: ExportVersion[] = ["正片版", "竖版", "横版", "预告版"].map((format) => ({ id: `export-${format}`, format: format as ExportVersion["format"], status: "draft", settings: `${format} / 1080p / H.264` }));
+      const exportVersions: ExportVersion[] = ["正片版", "竖版", "横版", "预告版"].map((format) => ({ id: `export-${format}`, format: format as ExportVersion["format"], status: "draft", settings: `${format} / 剪映工程 / 1080p`, url: "", metadata: "" }));
       setForm((current) => ({
         ...current,
         timeline_clips: scope === "single" ? [...current.timeline_clips.filter((clip) => !targetVideos.some((video) => video.id === clip.source_id)), ...timelineClips] : timelineClips,
@@ -6956,9 +6957,38 @@ function StepTenSection({
     }
   }
 
-  function createExportTask() {
-    setForm((current) => ({ ...current, export_versions: current.export_versions.map((item) => ({ ...item, status: item.status === "draft" ? "queued" : item.status })) }));
-    setStatusMessage("导出任务已创建，可追踪横版/竖版/预告版/正片版");
+  async function exportJianyingDraft() {
+    if (editingAction) return;
+    setEditingAction("export-jianying");
+    setForm((current) => {
+      const versions = current.export_versions.length ? current.export_versions : [{ id: "export-jianying", format: "正片版" as ExportVersion["format"], status: "draft" as const, settings: "正片版 / 剪映工程 / 1080p", url: "", metadata: "" }];
+      return { ...current, export_versions: versions.map((item, index) => index === 0 || item.status === "draft" ? { ...item, status: "queued" as const } : item) };
+    });
+    setStatusMessage("正在导出剪映工程文件...");
+    try {
+      const result = await exportJianyingProject(project.id);
+      const nextForm = await new Promise<StepTenData>((resolve) => {
+        setForm((current) => {
+          const versions = current.export_versions.length ? current.export_versions : [{ id: "export-jianying", format: "正片版" as ExportVersion["format"], status: "queued" as const, settings: "正片版 / 剪映工程 / 1080p", url: "", metadata: "" }];
+          const next = {
+            ...current,
+            export_versions: versions.map((item, index) => index === 0 ? { ...item, status: "exported" as const, settings: item.settings || "正片版 / 剪映工程 / 1080p", url: result.url, metadata: result.metadata } : item),
+            package_checklist: `${current.package_checklist}\n已导出剪映工程：${result.filename}`.trim(),
+            validation_report: `剪映工程已导出：${result.filename}`,
+          };
+          resolve(next);
+          return next;
+        });
+      });
+      const saved = await saveStepTen(project.id, nextForm);
+      onSaved(saved, `剪映工程已导出：${result.filename}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "剪映工程导出失败";
+      setForm((current) => ({ ...current, export_versions: current.export_versions.map((item) => item.status === "queued" ? { ...item, status: "draft" as const } : item), validation_report: message }));
+      setStatusMessage(message);
+    } finally {
+      setEditingAction(null);
+    }
   }
 
   async function addCoverCandidate(scope: "single" | "batch" = "batch") {
@@ -7051,7 +7081,7 @@ function StepTenSection({
         <AIActionButton isGenerating={editingAction === "timeline-single"} disabled={Boolean(editingAction) || !selectedEditingShotId} loadingLabel="所选编排中" onClick={() => void autoArrange("single")}>编排所选分镜</AIActionButton>
         <AIActionButton isGenerating={editingAction === "qc"} disabled={Boolean(editingAction)} loadingLabel="AI 检查中" onClick={() => void checkAlignment("batch")}>批量检查</AIActionButton>
         <AIActionButton isGenerating={editingAction === "qc-single"} disabled={Boolean(editingAction) || !selectedEditingShotId} loadingLabel="所选检查中" onClick={() => void checkAlignment("single")}>检查所选分镜</AIActionButton>
-        <button className="ghost-button inline-button" type="button" onClick={createExportTask}>创建导出任务</button>
+        <AIActionButton isGenerating={editingAction === "export-jianying"} disabled={Boolean(editingAction)} loadingLabel="导出剪映中" onClick={() => void exportJianyingDraft()}>导出剪映工程</AIActionButton>
         <AIActionButton isGenerating={editingAction === "cover"} disabled={Boolean(editingAction)} loadingLabel="AI 封面中" onClick={() => void addCoverCandidate("batch")}>新增封面候选</AIActionButton>
         <AIActionButton isGenerating={editingAction === "cover-single"} disabled={Boolean(editingAction) || !selectedEditingShotId} loadingLabel="所选封面中" onClick={() => void addCoverCandidate("single")}>所选封面</AIActionButton>
         <button className="ghost-button inline-button" type="button" onClick={validatePublishPackage}>进入发布校验</button>
@@ -7068,6 +7098,14 @@ function StepTenSection({
             <strong>{clip.track} · {clip.name}</strong>
             <span>{clip.start_seconds}s - {clip.end_seconds}s / {clip.transition}</span>
             <p>{clip.notes}</p>
+          </article>
+        ))}
+        {form.export_versions.map((version) => (
+          <article className="panel-card production-card" key={version.id}>
+            <strong>{version.format} · {version.status === "exported" ? "已导出" : version.status === "queued" ? "导出中" : "待导出"}</strong>
+            <span>{version.settings}</span>
+            {version.metadata ? <p>{version.metadata}</p> : null}
+            {version.url ? <a className="ghost-mini-button" href={version.url} download>下载剪映工程</a> : null}
           </article>
         ))}
         {form.cover_candidates.map((cover) => (

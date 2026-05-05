@@ -171,6 +171,13 @@ export async function saveStepEleven(projectId: string, data: StepElevenData): P
   return response.project;
 }
 
+export async function exportJianyingProject(projectId: string): Promise<{ url: string; filename: string; status: string; metadata: string }> {
+  return request<{ url: string; filename: string; status: string; metadata: string }>(
+    `/api/export/jianying-project/${encodeURIComponent(projectId)}`,
+    { method: "POST" }
+  );
+}
+
 export async function generateStepOneOutline(
   projectName: string,
   prompt: string,

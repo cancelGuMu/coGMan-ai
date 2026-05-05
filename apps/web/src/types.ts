@@ -357,6 +357,8 @@ export type ExportVersion = {
   format: "横版" | "竖版" | "预告版" | "正片版";
   status: "draft" | "queued" | "exported";
   settings: string;
+  url: string;
+  metadata: string;
 };
 
 export type CoverCandidate = {

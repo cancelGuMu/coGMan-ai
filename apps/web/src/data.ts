@@ -485,6 +485,11 @@ export function mergeProjectDefaults(project: ProjectRecord): ProjectRecord {
     step_ten: {
       ...stepTenDefaults,
       ...(project.step_ten ?? stepTenDefaults),
+      export_versions: (project.step_ten?.export_versions ?? stepTenDefaults.export_versions).map((version) => ({
+        ...version,
+        url: version.url ?? "",
+        metadata: version.metadata ?? "",
+      })),
     },
     step_eleven: {
       ...stepElevenDefaults,
