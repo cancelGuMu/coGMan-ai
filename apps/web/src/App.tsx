@@ -5482,7 +5482,18 @@ function StepFiveSection({
   const [form, setForm] = useState<StepFiveData>(project.step_five);
   const [saving, setSaving] = useState(false);
   const [promptGenerationAction, setPromptGenerationAction] = useState<string | null>(null);
+  const [selectedPromptShotId, setSelectedPromptShotId] = useState("");
   useEffect(() => setForm(project.step_five), [project.step_five]);
+  useEffect(() => {
+    const shots = project.step_four.shots;
+    if (!shots.length) {
+      setSelectedPromptShotId("");
+      return;
+    }
+    if (!shots.some((shot) => shot.id === selectedPromptShotId)) {
+      setSelectedPromptShotId(shots[0].id);
+    }
+  }, [project.step_four.shots, selectedPromptShotId]);
 
   const visiblePrompts = form.prompts.filter((item) => !form.filter_text || item.shot_label.includes(form.filter_text));
 
@@ -5491,9 +5502,9 @@ function StepFiveSection({
     const actionKey = `${scope}-${mode}`;
     setPromptGenerationAction(actionKey);
     const shots = project.step_four.shots.length ? project.step_four.shots : [];
-    const targets = scope === "single" ? shots.slice(0, 1) : shots;
+    const targets = scope === "single" ? shots.filter((shot) => shot.id === selectedPromptShotId) : shots;
     if (!targets.length) {
-      setStatusMessage("请先在步骤四生成镜头。");
+      setStatusMessage(scope === "single" ? "请先选择要生成提示词的分镜。" : "请先在步骤四生成镜头。");
       setPromptGenerationAction(null);
       return;
     }
@@ -5603,9 +5614,18 @@ function StepFiveSection({
       </div>
       <div className="action-row">
         <input value={form.filter_text} onChange={(event) => setForm({ ...form, filter_text: event.target.value })} placeholder="筛选镜头/场景/角色" />
+        <label className="video-shot-selector">
+          <span>制作分镜</span>
+          <select value={selectedPromptShotId} onChange={(event) => setSelectedPromptShotId(event.target.value)} disabled={!project.step_four.shots.length || Boolean(promptGenerationAction)}>
+            {project.step_four.shots.length ? project.step_four.shots.map((shot) => (
+              <option value={shot.id} key={shot.id}>第{shot.episode_number}集 #{shot.shot_number} · {shot.scene || shot.id}</option>
+            )) : <option value="">暂无分镜</option>}
+          </select>
+        </label>
         <AIActionButton className="primary-pill inline-pill" isGenerating={promptGenerationAction === "batch-t2i"} disabled={Boolean(promptGenerationAction)} loadingLabel="T2I生成中" onClick={() => generatePrompts("batch", "t2i")}>批量 T2I</AIActionButton>
-        <AIActionButton isGenerating={promptGenerationAction === "single-t2i"} disabled={Boolean(promptGenerationAction)} loadingLabel="单镜T2I中" onClick={() => generatePrompts("single", "t2i")}>单镜 T2I</AIActionButton>
+        <AIActionButton isGenerating={promptGenerationAction === "single-t2i"} disabled={Boolean(promptGenerationAction) || !selectedPromptShotId} loadingLabel="所选T2I中" onClick={() => generatePrompts("single", "t2i")}>所选 T2I</AIActionButton>
         <AIActionButton isGenerating={promptGenerationAction === "batch-i2v"} disabled={Boolean(promptGenerationAction)} loadingLabel="I2V生成中" onClick={() => generatePrompts("batch", "i2v")}>批量 I2V</AIActionButton>
+        <AIActionButton isGenerating={promptGenerationAction === "single-i2v"} disabled={Boolean(promptGenerationAction) || !selectedPromptShotId} loadingLabel="所选I2V中" onClick={() => generatePrompts("single", "i2v")}>所选 I2V</AIActionButton>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存提词"}</button>
       </div>
       <div className="field-row compact-row">
@@ -5648,6 +5668,16 @@ function StepSixSection({
     setForm(project.step_six);
     setRepaintFeedback({});
   }, [project.step_six]);
+  useEffect(() => {
+    const prompts = project.step_five.prompts;
+    if (!prompts.length) {
+      if (form.selected_shot_id) setForm((current) => ({ ...current, selected_shot_id: "" }));
+      return;
+    }
+    if (!prompts.some((prompt) => prompt.shot_id === form.selected_shot_id)) {
+      setForm((current) => ({ ...current, selected_shot_id: prompts[0].shot_id }));
+    }
+  }, [project.step_five.prompts, form.selected_shot_id]);
   const selectedCount = form.candidates.filter((item) => item.status === "selected" || item.status === "first-frame" || item.status === "keyframe").length;
 
   function updateRepaintFeedback(imageId: string, tone: "progress" | "success" | "error", message: string) {
@@ -5657,9 +5687,9 @@ function StepSixSection({
   async function generateImages(scope: "single" | "batch") {
     if (imageGenerationAction) return;
     const prompts = project.step_five.prompts.length ? project.step_five.prompts : [];
-    const targets = scope === "single" ? prompts.slice(0, 1) : prompts;
+    const targets = scope === "single" ? prompts.filter((prompt) => prompt.shot_id === form.selected_shot_id) : prompts;
     if (!targets.length) {
-      setStatusMessage("请先在步骤五生成 T2I 提示词。");
+      setStatusMessage(scope === "single" ? "请先选择要生成图片的分镜，并确认该分镜已有 T2I 提示词。" : "请先在步骤五生成 T2I 提示词。");
       return;
     }
     setImageGenerationAction(scope);
@@ -5869,8 +5899,16 @@ function StepSixSection({
           <option value="候选">候选</option>
           <option value="关键帧">关键帧</option>
         </select>
+        <label className="video-shot-selector">
+          <span>制作分镜</span>
+          <select value={form.selected_shot_id} onChange={(event) => setForm({ ...form, selected_shot_id: event.target.value })} disabled={!project.step_five.prompts.length || Boolean(imageGenerationAction)}>
+            {project.step_five.prompts.length ? project.step_five.prompts.map((prompt) => (
+              <option value={prompt.shot_id} key={prompt.id}>{prompt.shot_label} · {prompt.t2i_prompt ? "T2I" : "待补T2I"}</option>
+            )) : <option value="">暂无提示词</option>}
+          </select>
+        </label>
         <AIActionButton className="primary-pill inline-pill" isGenerating={imageGenerationAction === "batch"} disabled={Boolean(imageGenerationAction)} loadingLabel="图片批量生成中" onClick={() => void generateImages("batch")}>批量生成图片</AIActionButton>
-        <AIActionButton isGenerating={imageGenerationAction === "single"} disabled={Boolean(imageGenerationAction)} loadingLabel="单镜生成中" onClick={() => void generateImages("single")}>单镜生成</AIActionButton>
+        <AIActionButton isGenerating={imageGenerationAction === "single"} disabled={Boolean(imageGenerationAction) || !form.selected_shot_id} loadingLabel="所选生成中" onClick={() => void generateImages("single")}>生成所选分镜</AIActionButton>
         <button className="ghost-button inline-button" type="button" onClick={validateSelectedPackage}>进入视频校验</button>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存候选图"}</button>
       </div>
@@ -6230,23 +6268,48 @@ function StepNineSection({
   const [form, setForm] = useState<StepNineData>(project.step_nine);
   const [saving, setSaving] = useState(false);
   const [audioAction, setAudioAction] = useState<string | null>(null);
+  const [selectedAudioShotId, setSelectedAudioShotId] = useState("");
   useEffect(() => setForm(project.step_nine), [project.step_nine]);
+  useEffect(() => {
+    const shots = project.step_four.shots;
+    if (!shots.length) {
+      setSelectedAudioShotId("");
+      return;
+    }
+    if (!shots.some((shot) => shot.id === selectedAudioShotId)) {
+      setSelectedAudioShotId(shots[0].id);
+    }
+  }, [project.step_four.shots, selectedAudioShotId]);
+  const selectedAudioShot = project.step_four.shots.find((shot) => shot.id === selectedAudioShotId);
+  const selectedAudioShotLabel = selectedAudioShot ? `第${selectedAudioShot.episode_number}集 #${selectedAudioShot.shot_number}` : "所选分镜";
 
-  async function extractDialogue() {
+  async function extractDialogue(scope: "single" | "batch") {
     if (audioAction) return;
-    setAudioAction("dialogue");
-    setStatusMessage("AI 正在提取台词...");
+    if (scope === "single" && !selectedAudioShot) {
+      setStatusMessage("请先选择要制作音频字幕的分镜。");
+      return;
+    }
+    setAudioAction(scope === "single" ? "dialogue-single" : "dialogue");
+    setStatusMessage(scope === "single" ? `AI 正在为 ${selectedAudioShotLabel} 提取台词...` : "AI 正在提取台词...");
     try {
       const result = await generateProjectTextTask(
         project.name,
         "S09_DIALOGUE_EXTRACT",
-        [
-          "剧本：",
-          project.step_two.script_text || project.step_two.novel_text,
-          "分镜：",
-          JSON.stringify(project.step_four.shots, null, 2),
-        ].join("\n"),
-        { projectId: project.id, targetType: "dialogue" }
+        scope === "single"
+          ? [
+              `只为目标分镜提取台词/旁白，不要输出其他分镜。`,
+              `目标镜头 ID：${selectedAudioShot?.id}`,
+              `目标镜头标签：${selectedAudioShotLabel}`,
+              "目标分镜：",
+              JSON.stringify(selectedAudioShot, null, 2),
+            ].join("\n")
+          : [
+              "剧本：",
+              limitTextForAi(project.step_two.script_text || project.step_two.novel_text, 16000),
+              "分镜：",
+              JSON.stringify(project.step_four.shots, null, 2),
+            ].join("\n"),
+        { projectId: project.id, targetType: scope === "single" ? "shot" : "dialogue", targetId: scope === "single" ? selectedAudioShot?.id : undefined }
       );
       const parsed = parseStrictJsonOutput(result.content);
       const lines = listValue(parsed.dialogue_lines)
@@ -6270,8 +6333,11 @@ function StepNineSection({
         setStatusMessage("AI 返回格式异常，未提取到台词。");
         return;
       }
-      setForm((current) => ({ ...current, dialogue_lines: lines }));
-      setStatusMessage(`AI 已提取 ${lines.length} 条台词/旁白`);
+      setForm((current) => ({
+        ...current,
+        dialogue_lines: scope === "single" ? [...current.dialogue_lines.filter((line) => line.shot_id !== selectedAudioShot?.id), ...lines] : lines,
+      }));
+      setStatusMessage(scope === "single" ? `AI 已为 ${selectedAudioShotLabel} 提取 ${lines.length} 条台词/旁白。` : `AI 已提取 ${lines.length} 条台词/旁白`);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "AI 台词提取失败");
     } finally {
@@ -6279,16 +6345,21 @@ function StepNineSection({
     }
   }
 
-  async function generateAudio(includeNarration = false) {
+  async function generateAudio(includeNarration = false, scope: "single" | "batch" = "batch") {
     if (audioAction) return;
-    setAudioAction(includeNarration ? "narration" : "voice");
-    setStatusMessage(includeNarration ? "AI 正在生成旁白/配音规划..." : "AI 正在生成配音规划...");
+    const targetLines = scope === "single" ? form.dialogue_lines.filter((line) => line.shot_id === selectedAudioShotId) : form.dialogue_lines;
+    if (scope === "single" && (!selectedAudioShotId || !targetLines.length)) {
+      setStatusMessage("请先选择分镜，并确保该分镜已有台词/旁白。");
+      return;
+    }
+    setAudioAction(`${includeNarration ? "narration" : "voice"}-${scope}`);
+    setStatusMessage(scope === "single" ? `AI 正在为 ${selectedAudioShotLabel} 生成配音规划...` : includeNarration ? "AI 正在生成旁白/配音规划..." : "AI 正在生成配音规划...");
     try {
       const result = await generateProjectTextTask(
         project.name,
         "S09_VOICE_PROFILE",
-        JSON.stringify({ includeNarration, dialogue_lines: form.dialogue_lines, characters: project.step_three.characters }, null, 2),
-        { projectId: project.id, targetType: includeNarration ? "narration" : "voice" }
+        JSON.stringify({ includeNarration, dialogue_lines: targetLines, characters: project.step_three.characters, target_shot_id: scope === "single" ? selectedAudioShotId : "" }, null, 2),
+        { projectId: project.id, targetType: scope === "single" ? "shot" : includeNarration ? "narration" : "voice", targetId: scope === "single" ? selectedAudioShotId : undefined }
       );
       const parsed = firstJsonObject(result.content);
       const profiles = listValue(parsed.voice_profiles)
@@ -6307,10 +6378,16 @@ function StepNineSection({
       setForm((current) => ({
         ...current,
         voice_profiles: profiles.length ? profiles : current.voice_profiles,
-        dialogue_lines: current.dialogue_lines.map((line) => includeNarration || line.speaker !== "旁白" ? { ...line, audio_status: "generated" } : line),
-        lip_sync_tasks: current.dialogue_lines.map((line) => `AI 口型同步任务：${line.shot_label} / ${line.speaker}`),
+        dialogue_lines: current.dialogue_lines.map((line) => {
+          const inScope = scope === "batch" || line.shot_id === selectedAudioShotId;
+          return inScope && (includeNarration || line.speaker !== "旁白") ? { ...line, audio_status: "generated" } : line;
+        }),
+        lip_sync_tasks: [
+          ...current.lip_sync_tasks.filter((task) => scope === "batch" ? false : !task.includes(selectedAudioShotLabel)),
+          ...targetLines.map((line) => `AI 口型同步任务：${line.shot_label} / ${line.speaker}`),
+        ],
       }));
-      setStatusMessage(includeNarration ? "AI 旁白与对白规划已生成" : "AI 角色配音规划已生成");
+      setStatusMessage(scope === "single" ? `${selectedAudioShotLabel} 的配音规划已生成。` : includeNarration ? "AI 旁白与对白规划已生成" : "AI 角色配音规划已生成");
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "AI 配音规划失败");
     } finally {
@@ -6318,16 +6395,22 @@ function StepNineSection({
     }
   }
 
-  async function generateSubtitles() {
+  async function generateSubtitles(scope: "single" | "batch") {
     if (audioAction) return;
-    setAudioAction("subtitle");
-    setStatusMessage("AI 正在生成字幕时间轴...");
+    const targetLines = scope === "single" ? form.dialogue_lines.filter((line) => line.shot_id === selectedAudioShotId) : form.dialogue_lines;
+    const targetClips = scope === "single" ? project.step_eight.clips.filter((clip) => clip.shot_id === selectedAudioShotId) : project.step_eight.clips;
+    if (scope === "single" && (!selectedAudioShotId || !targetLines.length)) {
+      setStatusMessage("请先选择分镜，并确保该分镜已有台词。");
+      return;
+    }
+    setAudioAction(scope === "single" ? "subtitle-single" : "subtitle");
+    setStatusMessage(scope === "single" ? `AI 正在为 ${selectedAudioShotLabel} 生成字幕...` : "AI 正在生成字幕时间轴...");
     try {
       const result = await generateProjectTextTask(
         project.name,
         "S09_SUBTITLE_TIMELINE",
-        JSON.stringify({ dialogue_lines: form.dialogue_lines, clips: project.step_eight.clips, subtitle_style: form.subtitle_style }, null, 2),
-        { projectId: project.id, targetType: "subtitle" }
+        JSON.stringify({ dialogue_lines: targetLines, clips: targetClips, subtitle_style: form.subtitle_style, target_shot_id: scope === "single" ? selectedAudioShotId : "" }, null, 2),
+        { projectId: project.id, targetType: scope === "single" ? "shot" : "subtitle", targetId: scope === "single" ? selectedAudioShotId : undefined }
       );
       const parsed = firstJsonObject(result.content);
       const cues = listValue(parsed.subtitle_cues)
@@ -6343,8 +6426,11 @@ function StepNineSection({
           };
         })
         .filter((item): item is NonNullable<typeof item> => Boolean(item));
-      setForm((current) => ({ ...current, subtitle_cues: cues }));
-      setStatusMessage(`AI 已生成 ${cues.length} 条字幕。`);
+      setForm((current) => ({
+        ...current,
+        subtitle_cues: scope === "single" ? [...current.subtitle_cues.filter((cue) => cue.shot_id !== selectedAudioShotId), ...cues] : cues,
+      }));
+      setStatusMessage(scope === "single" ? `AI 已为 ${selectedAudioShotLabel} 生成 ${cues.length} 条字幕。` : `AI 已生成 ${cues.length} 条字幕。`);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "AI 字幕生成失败");
     } finally {
@@ -6352,16 +6438,25 @@ function StepNineSection({
     }
   }
 
-  async function addSoundEffect() {
+  async function addSoundEffect(scope: "single" | "batch") {
     if (audioAction) return;
-    setAudioAction("sound");
-    setStatusMessage("AI 正在生成音效任务建议...");
+    if (scope === "single" && !selectedAudioShot) {
+      setStatusMessage("请先选择要生成音效建议的分镜。");
+      return;
+    }
+    setAudioAction(scope === "single" ? "sound-single" : "sound");
+    setStatusMessage(scope === "single" ? `AI 正在为 ${selectedAudioShotLabel} 生成音效建议...` : "AI 正在生成音效任务建议...");
     try {
       const result = await generateProjectTextTask(
         project.name,
         "S09_SOUND_EFFECTS",
-        JSON.stringify({ shots: project.step_four.shots, dialogue_lines: form.dialogue_lines, clips: project.step_eight.clips }, null, 2),
-        { projectId: project.id, targetType: "sound" }
+        JSON.stringify({
+          shots: scope === "single" ? [selectedAudioShot] : project.step_four.shots,
+          dialogue_lines: scope === "single" ? form.dialogue_lines.filter((line) => line.shot_id === selectedAudioShotId) : form.dialogue_lines,
+          clips: scope === "single" ? project.step_eight.clips.filter((clip) => clip.shot_id === selectedAudioShotId) : project.step_eight.clips,
+          target_shot_id: scope === "single" ? selectedAudioShotId : "",
+        }, null, 2),
+        { projectId: project.id, targetType: scope === "single" ? "shot" : "sound", targetId: scope === "single" ? selectedAudioShotId : undefined }
       );
       const parsed = firstJsonObject(result.content);
       const soundEffects = listValue(parsed.sound_effects)
@@ -6386,7 +6481,7 @@ function StepNineSection({
         sound_effects: [...current.sound_effects, ...soundEffects],
         mix_settings: textValue(parsed.mix_notes, current.mix_settings),
       }));
-      setStatusMessage(`AI 已生成 ${soundEffects.length} 条音效任务建议，后续仍需制作或导入真实音频素材。`);
+      setStatusMessage(scope === "single" ? `AI 已为 ${selectedAudioShotLabel} 生成 ${soundEffects.length} 条音效建议。` : `AI 已生成 ${soundEffects.length} 条音效任务建议，后续仍需制作或导入真实音频素材。`);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "AI 音效任务建议生成失败");
     } finally {
@@ -6423,11 +6518,24 @@ function StepNineSection({
         <div className="chip-row"><span className="ghost-chip">台词 {form.dialogue_lines.length}</span><span className="ghost-chip">字幕 {form.subtitle_cues.length}</span></div>
       </div>
       <div className="action-row">
-        <AIActionButton className="primary-pill inline-pill" isGenerating={audioAction === "dialogue"} disabled={Boolean(audioAction)} loadingLabel="AI 提取中" onClick={() => void extractDialogue()}>提取台词</AIActionButton>
-        <AIActionButton isGenerating={audioAction === "voice"} disabled={Boolean(audioAction)} loadingLabel="AI 规划中" onClick={() => void generateAudio(false)}>生成配音</AIActionButton>
-        <AIActionButton isGenerating={audioAction === "narration"} disabled={Boolean(audioAction)} loadingLabel="AI 规划中" onClick={() => void generateAudio(true)}>生成旁白</AIActionButton>
-        <AIActionButton isGenerating={audioAction === "subtitle"} disabled={Boolean(audioAction)} loadingLabel="AI 字幕中" onClick={() => void generateSubtitles()}>生成字幕</AIActionButton>
-        <AIActionButton isGenerating={audioAction === "sound"} disabled={Boolean(audioAction)} loadingLabel="AI 音效建议中" onClick={() => void addSoundEffect()}>生成音效建议</AIActionButton>
+        <label className="video-shot-selector">
+          <span>制作分镜</span>
+          <select value={selectedAudioShotId} onChange={(event) => setSelectedAudioShotId(event.target.value)} disabled={!project.step_four.shots.length || Boolean(audioAction)}>
+            {project.step_four.shots.length ? project.step_four.shots.map((shot) => (
+              <option value={shot.id} key={shot.id}>第{shot.episode_number}集 #{shot.shot_number} · {shot.scene || shot.id}</option>
+            )) : <option value="">暂无分镜</option>}
+          </select>
+        </label>
+        <AIActionButton className="primary-pill inline-pill" isGenerating={audioAction === "dialogue"} disabled={Boolean(audioAction)} loadingLabel="AI 提取中" onClick={() => void extractDialogue("batch")}>批量提取台词</AIActionButton>
+        <AIActionButton isGenerating={audioAction === "dialogue-single"} disabled={Boolean(audioAction) || !selectedAudioShotId} loadingLabel="所选提取中" onClick={() => void extractDialogue("single")}>提取所选台词</AIActionButton>
+        <AIActionButton isGenerating={audioAction === "voice-batch"} disabled={Boolean(audioAction)} loadingLabel="AI 规划中" onClick={() => void generateAudio(false, "batch")}>批量配音</AIActionButton>
+        <AIActionButton isGenerating={audioAction === "voice-single"} disabled={Boolean(audioAction) || !selectedAudioShotId} loadingLabel="所选配音中" onClick={() => void generateAudio(false, "single")}>所选配音</AIActionButton>
+        <AIActionButton isGenerating={audioAction === "narration-batch"} disabled={Boolean(audioAction)} loadingLabel="AI 旁白中" onClick={() => void generateAudio(true, "batch")}>批量旁白</AIActionButton>
+        <AIActionButton isGenerating={audioAction === "narration-single"} disabled={Boolean(audioAction) || !selectedAudioShotId} loadingLabel="所选旁白中" onClick={() => void generateAudio(true, "single")}>所选旁白</AIActionButton>
+        <AIActionButton isGenerating={audioAction === "subtitle"} disabled={Boolean(audioAction)} loadingLabel="AI 字幕中" onClick={() => void generateSubtitles("batch")}>批量字幕</AIActionButton>
+        <AIActionButton isGenerating={audioAction === "subtitle-single"} disabled={Boolean(audioAction) || !selectedAudioShotId} loadingLabel="所选字幕中" onClick={() => void generateSubtitles("single")}>所选字幕</AIActionButton>
+        <AIActionButton isGenerating={audioAction === "sound"} disabled={Boolean(audioAction)} loadingLabel="AI 音效建议中" onClick={() => void addSoundEffect("batch")}>批量音效建议</AIActionButton>
+        <AIActionButton isGenerating={audioAction === "sound-single"} disabled={Boolean(audioAction) || !selectedAudioShotId} loadingLabel="所选音效中" onClick={() => void addSoundEffect("single")}>所选音效</AIActionButton>
         <button className="ghost-button inline-button" type="button" onClick={checkAudioSubtitle}>完整性检查</button>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存音频字幕"}</button>
       </div>
@@ -6464,17 +6572,42 @@ function StepTenSection({
   const [saving, setSaving] = useState(false);
   const [editingAction, setEditingAction] = useState<string | null>(null);
   useEffect(() => setForm(project.step_ten), [project.step_ten]);
+  const [selectedEditingShotId, setSelectedEditingShotId] = useState("");
+  useEffect(() => {
+    const shots = project.step_four.shots;
+    if (!shots.length) {
+      setSelectedEditingShotId("");
+      return;
+    }
+    if (!shots.some((shot) => shot.id === selectedEditingShotId)) {
+      setSelectedEditingShotId(shots[0].id);
+    }
+  }, [project.step_four.shots, selectedEditingShotId]);
+  const selectedEditingShot = project.step_four.shots.find((shot) => shot.id === selectedEditingShotId);
+  const selectedEditingShotLabel = selectedEditingShot ? `第${selectedEditingShot.episode_number}集 #${selectedEditingShot.shot_number}` : "所选分镜";
 
-  async function autoArrange() {
+  async function autoArrange(scope: "single" | "batch") {
     if (editingAction) return;
-    setEditingAction("timeline");
-    setStatusMessage("AI 正在编排时间线...");
+    if (scope === "single" && !selectedEditingShot) {
+      setStatusMessage("请先选择要编排的分镜。");
+      return;
+    }
+    const targetVideos = scope === "single" ? project.step_eight.clips.filter((clip) => clip.shot_id === selectedEditingShotId) : project.step_eight.clips;
+    const targetDialogue = scope === "single" ? project.step_nine.dialogue_lines.filter((line) => line.shot_id === selectedEditingShotId) : project.step_nine.dialogue_lines;
+    const targetSubtitles = scope === "single" ? project.step_nine.subtitle_cues.filter((cue) => cue.shot_id === selectedEditingShotId) : project.step_nine.subtitle_cues;
+    setEditingAction(scope === "single" ? "timeline-single" : "timeline");
+    setStatusMessage(scope === "single" ? `AI 正在为 ${selectedEditingShotLabel} 编排时间线...` : "AI 正在编排时间线...");
     try {
       const result = await generateProjectTextTask(
         project.name,
         "S10_TIMELINE",
-        JSON.stringify({ videos: project.step_eight.clips, audio_subtitle: project.step_nine, transition_settings: form.transition_settings }, null, 2),
-        { projectId: project.id, targetType: "timeline" }
+        JSON.stringify({
+          videos: targetVideos,
+          audio_subtitle: { ...project.step_nine, dialogue_lines: targetDialogue, subtitle_cues: targetSubtitles },
+          transition_settings: form.transition_settings,
+          target_shot_id: scope === "single" ? selectedEditingShotId : "",
+        }, null, 2),
+        { projectId: project.id, targetType: scope === "single" ? "shot" : "timeline", targetId: scope === "single" ? selectedEditingShotId : undefined }
       );
       const parsed = firstJsonObject(result.content);
       const timelineClips = listValue(parsed.timeline_clips)
@@ -6497,13 +6630,13 @@ function StepTenSection({
       const exportVersions: ExportVersion[] = ["正片版", "竖版", "横版", "预告版"].map((format) => ({ id: `export-${format}`, format: format as ExportVersion["format"], status: "draft", settings: `${format} / 1080p / H.264` }));
       setForm((current) => ({
         ...current,
-        timeline_clips: timelineClips,
+        timeline_clips: scope === "single" ? [...current.timeline_clips.filter((clip) => !targetVideos.some((video) => video.id === clip.source_id)), ...timelineClips] : timelineClips,
         export_versions: exportVersions,
-        rhythm_marks: splitTextLines(parsed.rhythm_marks),
+        rhythm_marks: scope === "single" ? [...current.rhythm_marks, ...splitTextLines(parsed.rhythm_marks).map((mark) => `${selectedEditingShotLabel}：${mark}`)] : splitTextLines(parsed.rhythm_marks),
         package_checklist: textValue(parsed.package_checklist, `AI 已编排 ${timelineClips.length} 个时间线片段`),
         validation_report: splitTextLines(parsed.blocking_issues).join("\n"),
       }));
-      setStatusMessage(`AI 已编排 ${timelineClips.length} 个时间线片段。`);
+      setStatusMessage(scope === "single" ? `AI 已为 ${selectedEditingShotLabel} 编排 ${timelineClips.length} 个时间线片段。` : `AI 已编排 ${timelineClips.length} 个时间线片段。`);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "AI 自动编排失败");
     } finally {
@@ -6511,22 +6644,30 @@ function StepTenSection({
     }
   }
 
-  async function checkAlignment() {
+  async function checkAlignment(scope: "single" | "batch") {
     if (editingAction) return;
-    setEditingAction("qc");
-    setStatusMessage("AI 正在检查音画字幕...");
+    if (scope === "single" && !selectedEditingShot) {
+      setStatusMessage("请先选择要检查的分镜。");
+      return;
+    }
+    const targetVideos = scope === "single" ? project.step_eight.clips.filter((clip) => clip.shot_id === selectedEditingShotId) : project.step_eight.clips;
+    const targetSubtitles = scope === "single" ? project.step_nine.subtitle_cues.filter((cue) => cue.shot_id === selectedEditingShotId) : project.step_nine.subtitle_cues;
+    const targetSourceIds = new Set(targetVideos.map((clip) => clip.id));
+    const targetTimeline = scope === "single" ? form.timeline_clips.filter((clip) => targetSourceIds.has(clip.source_id)) : form.timeline_clips;
+    setEditingAction(scope === "single" ? "qc-single" : "qc");
+    setStatusMessage(scope === "single" ? `AI 正在检查 ${selectedEditingShotLabel} 的音画字幕...` : "AI 正在检查音画字幕...");
     try {
       const result = await generateProjectTextTask(
         project.name,
         "S10_EDIT_QC",
-        JSON.stringify({ timeline_clips: form.timeline_clips, subtitles: project.step_nine.subtitle_cues, videos: project.step_eight.clips }, null, 2),
-        { projectId: project.id, targetType: "timeline" }
+        JSON.stringify({ timeline_clips: targetTimeline, subtitles: targetSubtitles, videos: targetVideos, target_shot_id: scope === "single" ? selectedEditingShotId : "" }, null, 2),
+        { projectId: project.id, targetType: scope === "single" ? "shot" : "timeline", targetId: scope === "single" ? selectedEditingShotId : undefined }
       );
       const parsed = firstJsonObject(result.content);
       const report = textValue(parsed.edit_qc_report, result.content);
       const issues = splitTextLines(parsed.issues).join("\n");
-      setForm((current) => ({ ...current, edit_qc_report: report, validation_report: issues || report }));
-      setStatusMessage("AI 音画字幕检查已完成。");
+      setForm((current) => ({ ...current, edit_qc_report: scope === "single" ? `${current.edit_qc_report}\n${selectedEditingShotLabel}：${report}`.trim() : report, validation_report: issues || report }));
+      setStatusMessage(scope === "single" ? `${selectedEditingShotLabel} 的音画字幕检查已完成。` : "AI 音画字幕检查已完成。");
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "AI 音画字幕检查失败");
     } finally {
@@ -6539,17 +6680,24 @@ function StepTenSection({
     setStatusMessage("导出任务已创建，可追踪横版/竖版/预告版/正片版");
   }
 
-  async function addCoverCandidate() {
+  async function addCoverCandidate(scope: "single" | "batch" = "batch") {
     if (editingAction) return;
-    const source = project.step_six.candidates.find((item) => item.status === "selected" || item.status === "keyframe" || item.status === "first-frame");
-    setEditingAction("cover");
-    setStatusMessage("AI 正在生成封面候选...");
+    const source = project.step_six.candidates.find((item) =>
+      (scope === "batch" || item.shot_id === selectedEditingShotId) &&
+      (item.status === "selected" || item.status === "keyframe" || item.status === "first-frame")
+    );
+    if (scope === "single" && !source) {
+      setStatusMessage("所选分镜还没有入选关键帧，无法生成封面候选。");
+      return;
+    }
+    setEditingAction(scope === "single" ? "cover-single" : "cover");
+    setStatusMessage(scope === "single" ? `AI 正在为 ${selectedEditingShotLabel} 生成封面候选...` : "AI 正在生成封面候选...");
     try {
       const result = await generateProjectTextTask(
         project.name,
         "S10_COVER_TITLE",
-        JSON.stringify({ source_image: source, story: project.step_one, script: project.step_two.script_text }, null, 2),
-        { projectId: project.id, targetType: "cover", targetId: source?.id }
+        JSON.stringify({ source_image: source, story: project.step_one, script: limitTextForAi(project.step_two.script_text, 8000), target_shot_id: scope === "single" ? selectedEditingShotId : "" }, null, 2),
+        { projectId: project.id, targetType: source ? "image" : "cover", targetId: source?.id }
       );
       const parsed = firstJsonObject(result.content);
       const rawCover = listValue(parsed.cover_candidates)[0];
@@ -6568,7 +6716,7 @@ function StepTenSection({
           },
         ],
       }));
-      setStatusMessage("AI 封面候选已生成。");
+      setStatusMessage(scope === "single" ? `${selectedEditingShotLabel} 的封面候选已生成。` : "AI 封面候选已生成。");
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : "AI 封面候选生成失败");
     } finally {
@@ -6610,10 +6758,21 @@ function StepTenSection({
         <div className="chip-row"><span className="ghost-chip">时间线 {form.timeline_clips.length}</span><span className="ghost-chip">导出 {form.export_versions.length}</span></div>
       </div>
       <div className="action-row">
-        <AIActionButton className="primary-pill inline-pill" isGenerating={editingAction === "timeline"} disabled={Boolean(editingAction)} loadingLabel="AI 编排中" onClick={() => void autoArrange()}>自动编排</AIActionButton>
-        <AIActionButton isGenerating={editingAction === "qc"} disabled={Boolean(editingAction)} loadingLabel="AI 检查中" onClick={() => void checkAlignment()}>音画字幕检查</AIActionButton>
+        <label className="video-shot-selector">
+          <span>制作分镜</span>
+          <select value={selectedEditingShotId} onChange={(event) => setSelectedEditingShotId(event.target.value)} disabled={!project.step_four.shots.length || Boolean(editingAction)}>
+            {project.step_four.shots.length ? project.step_four.shots.map((shot) => (
+              <option value={shot.id} key={shot.id}>第{shot.episode_number}集 #{shot.shot_number} · {shot.scene || shot.id}</option>
+            )) : <option value="">暂无分镜</option>}
+          </select>
+        </label>
+        <AIActionButton className="primary-pill inline-pill" isGenerating={editingAction === "timeline"} disabled={Boolean(editingAction)} loadingLabel="AI 编排中" onClick={() => void autoArrange("batch")}>批量编排</AIActionButton>
+        <AIActionButton isGenerating={editingAction === "timeline-single"} disabled={Boolean(editingAction) || !selectedEditingShotId} loadingLabel="所选编排中" onClick={() => void autoArrange("single")}>编排所选分镜</AIActionButton>
+        <AIActionButton isGenerating={editingAction === "qc"} disabled={Boolean(editingAction)} loadingLabel="AI 检查中" onClick={() => void checkAlignment("batch")}>批量检查</AIActionButton>
+        <AIActionButton isGenerating={editingAction === "qc-single"} disabled={Boolean(editingAction) || !selectedEditingShotId} loadingLabel="所选检查中" onClick={() => void checkAlignment("single")}>检查所选分镜</AIActionButton>
         <button className="ghost-button inline-button" type="button" onClick={createExportTask}>创建导出任务</button>
-        <AIActionButton isGenerating={editingAction === "cover"} disabled={Boolean(editingAction)} loadingLabel="AI 封面中" onClick={() => void addCoverCandidate()}>新增封面候选</AIActionButton>
+        <AIActionButton isGenerating={editingAction === "cover"} disabled={Boolean(editingAction)} loadingLabel="AI 封面中" onClick={() => void addCoverCandidate("batch")}>新增封面候选</AIActionButton>
+        <AIActionButton isGenerating={editingAction === "cover-single"} disabled={Boolean(editingAction) || !selectedEditingShotId} loadingLabel="所选封面中" onClick={() => void addCoverCandidate("single")}>所选封面</AIActionButton>
         <button className="ghost-button inline-button" type="button" onClick={validatePublishPackage}>进入发布校验</button>
         <button className="ghost-button inline-button strong" type="button" onClick={() => void handleSave()} disabled={saving}>{saving ? "保存中..." : "保存剪辑"}</button>
       </div>

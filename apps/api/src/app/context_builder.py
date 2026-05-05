@@ -426,6 +426,17 @@ def _relevant_context_for_task(task_id: str, project: ProjectRecord, target: Any
             },
         }
     if task_id.startswith("S09_"):
+        target_shot_id = _target_shot_id(target)
+        if target_shot_id:
+            target_terms = _target_terms(_single_shot_summary(project, target_shot_id))
+            return {
+                "script_excerpt": _excerpt_for_terms(project.step_two.script_text or project.step_two.novel_text, target_terms, 8_000),
+                "target_shot": _single_shot_summary(project, target_shot_id),
+                "neighbor_shots": _neighbor_shots_summary(project, target_shot_id, radius=1),
+                "videos": _videos_summary_for_shot(project, target_shot_id, limit=8),
+                "dialogue_audio_workspace": _audio_summary_for_shot(project, target_shot_id),
+                "characters": _asset_summary(project).get("characters", [])[:12],
+            }
         return {
             "script_excerpt": _excerpt_for_terms(project.step_two.script_text or project.step_two.novel_text, [], 16_000),
             "shots": _shots_summary(project, limit=40),
@@ -434,6 +445,19 @@ def _relevant_context_for_task(task_id: str, project: ProjectRecord, target: Any
             "characters": _asset_summary(project).get("characters", []),
         }
     if task_id.startswith("S10_"):
+        target_shot_id = _target_shot_id(target)
+        if target_shot_id:
+            return {
+                "target_shot": _single_shot_summary(project, target_shot_id),
+                "neighbor_shots": _neighbor_shots_summary(project, target_shot_id, radius=1),
+                "videos": _videos_summary_for_shot(project, target_shot_id, limit=8),
+                "audio_subtitle": _audio_summary_for_shot(project, target_shot_id),
+                "timeline": _timeline_summary_for_shot(project, target_shot_id, limit=12),
+                "package": {
+                    "transition_settings": clip_text(project.step_ten.transition_settings, 1_000),
+                    "package_checklist": clip_text(project.step_ten.package_checklist, 1_000),
+                },
+            }
         return {
             "videos": _videos_summary(project, limit=60),
             "audio_subtitle": _audio_summary(project),
@@ -853,6 +877,28 @@ def _videos_summary(project: ProjectRecord, limit: int) -> list[dict[str, Any]]:
     ]
 
 
+def _videos_summary_for_shot(project: ProjectRecord, shot_id: str, limit: int) -> list[dict[str, Any]]:
+    related = [item for item in project.step_eight.clips if item.shot_id == shot_id]
+    return [
+        {
+            "id": item.id,
+            "shot_id": item.shot_id,
+            "shot_label": clip_text(item.shot_label, 200),
+            "source_image_id": item.source_image_id,
+            "duration_seconds": item.duration_seconds,
+            "motion_prompt": clip_text(item.motion_prompt, 1_500),
+            "reference_note": clip_text(item.reference_note, 600),
+            "status": item.status,
+            "fail_reason": clip_text(item.fail_reason, 500),
+            "regeneration_strategy": clip_text(item.regeneration_strategy, 600),
+            "version": clip_text(item.version, 120),
+            "metadata": clip_text(item.metadata, 400),
+            "has_video": bool(item.url.strip()),
+        }
+        for item in related[:limit]
+    ]
+
+
 def _audio_summary(project: ProjectRecord) -> dict[str, Any]:
     step = project.step_nine
     return {
@@ -868,6 +914,23 @@ def _audio_summary(project: ProjectRecord) -> dict[str, Any]:
     }
 
 
+def _audio_summary_for_shot(project: ProjectRecord, shot_id: str) -> dict[str, Any]:
+    step = project.step_nine
+    shot = _single_shot_summary(project, shot_id)
+    shot_label = f"第{shot.get('episode_number')}集 #{shot.get('shot_number')}" if shot else ""
+    return {
+        "dialogue_lines": [sanitize_for_ai(item) for item in step.dialogue_lines if item.shot_id == shot_id][:20],
+        "voice_profiles": [sanitize_for_ai(item) for item in step.voice_profiles[:40]],
+        "subtitle_cues": [sanitize_for_ai(item) for item in step.subtitle_cues if item.shot_id == shot_id][:40],
+        "subtitle_style": clip_text(step.subtitle_style, 600),
+        "sound_effects": [sanitize_for_ai(item) for item in step.sound_effects if not shot_label or shot_label in item.shot_label][:30],
+        "bgm_settings": clip_text(step.bgm_settings, 600),
+        "mix_settings": clip_text(step.mix_settings, 600),
+        "lip_sync_tasks": [clip_text(item, 300) for item in step.lip_sync_tasks if not shot_label or shot_label in item][:20],
+        "validation_report": clip_text(step.validation_report, 1_000),
+    }
+
+
 def _timeline_summary(project: ProjectRecord, limit: int) -> dict[str, Any]:
     step = project.step_ten
     return {
@@ -878,6 +941,23 @@ def _timeline_summary(project: ProjectRecord, limit: int) -> dict[str, Any]:
         "cover_candidates": [sanitize_for_ai(item) for item in step.cover_candidates[:20]],
         "package_checklist": clip_text(step.package_checklist, 2_000),
         "validation_report": clip_text(step.validation_report, 2_000),
+    }
+
+
+def _timeline_summary_for_shot(project: ProjectRecord, shot_id: str, limit: int) -> dict[str, Any]:
+    step = project.step_ten
+    video_ids = {item.id for item in project.step_eight.clips if item.shot_id == shot_id}
+    related_timeline = [item for item in step.timeline_clips if item.source_id in video_ids]
+    shot = _single_shot_summary(project, shot_id)
+    shot_label = f"第{shot.get('episode_number')}集 #{shot.get('shot_number')}" if shot else ""
+    return {
+        "timeline_clips": [sanitize_for_ai(item) for item in related_timeline[:limit]],
+        "rhythm_marks": [clip_text(item, 300) for item in step.rhythm_marks if shot_id in item or (shot_label and shot_label in item)][:20],
+        "transition_settings": clip_text(step.transition_settings, 600),
+        "edit_qc_report": clip_text(step.edit_qc_report, 1_000),
+        "cover_candidates": [sanitize_for_ai(item) for item in step.cover_candidates[:10]],
+        "package_checklist": clip_text(step.package_checklist, 1_000),
+        "validation_report": clip_text(step.validation_report, 1_000),
     }
 
 
