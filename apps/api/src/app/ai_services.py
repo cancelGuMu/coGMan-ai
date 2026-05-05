@@ -381,7 +381,8 @@ def create_minimax_speech(
         {"Authorization": f"Bearer {api_key}"},
         timeout=120,
     )
-    audio = data.get("audio")
+    payload_data = data.get("data")
+    audio = payload_data.get("audio") if isinstance(payload_data, dict) else data.get("audio")
     if isinstance(audio, dict):
         audio_value = audio.get("audio") or audio.get("data") or audio.get("url") or audio.get("download_url")
     else:
