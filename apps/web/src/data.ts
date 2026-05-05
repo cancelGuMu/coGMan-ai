@@ -467,6 +467,20 @@ export function mergeProjectDefaults(project: ProjectRecord): ProjectRecord {
     step_nine: {
       ...stepNineDefaults,
       ...(project.step_nine ?? stepNineDefaults),
+      dialogue_lines: (project.step_nine?.dialogue_lines ?? stepNineDefaults.dialogue_lines).map((line) => ({
+        ...line,
+        audio_status: line.audio_url ? "generated" : line.audio_status === "generated" ? "planned" : line.audio_status ?? "pending",
+        voice_id: line.voice_id || (line.speaker === "旁白" ? "presenter_female" : "male-qn-qingse"),
+        audio_url: line.audio_url ?? "",
+        audio_provider: line.audio_provider ?? "",
+        audio_model: line.audio_model ?? "",
+        audio_metadata: line.audio_metadata ?? "",
+        audio_fail_reason: line.audio_fail_reason ?? "",
+      })),
+      voice_profiles: (project.step_nine?.voice_profiles ?? stepNineDefaults.voice_profiles).map((profile) => ({
+        ...profile,
+        voice_id: profile.voice_id || "male-qn-qingse",
+      })),
     },
     step_ten: {
       ...stepTenDefaults,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
+import base64
 import os
 from pathlib import Path
 import re
@@ -14,7 +15,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .models import (
+    AudioGenerationRequest,
     CreateProjectRequest,
+    GeneratedAudioResponse,
     GeneratedImageResponse,
     GeneratedTextResponse,
     GeneratedVideoResponse,
@@ -40,6 +43,7 @@ from .models import (
 )
 from .ai_services import (
     AIServiceError,
+    create_minimax_speech,
     create_minimax_video,
     generate_deepseek_text,
     generate_image,
@@ -77,7 +81,9 @@ from .storage import (
 MAX_IMPORT_BYTES = 8 * 1024 * 1024
 MAX_IMPORT_TEXT_CHARS = 180_000
 DASHBOARD_DATA_FILE = Path(__file__).resolve().parents[2] / "data" / "dashboard.json"
-GENERATED_VIDEO_DIR = Path(__file__).resolve().parents[4] / "outputs" / "generated_videos"
+OUTPUTS_DIR = Path(__file__).resolve().parents[4] / "outputs"
+GENERATED_VIDEO_DIR = OUTPUTS_DIR / "generated_videos"
+GENERATED_AUDIO_DIR = OUTPUTS_DIR / "generated_audio"
 TEXT_IMPORT_SUFFIXES = {
     ".txt",
     ".md",
@@ -151,7 +157,9 @@ DASHBOARD_FALLBACK = {
 
 app = FastAPI(title="coGMan-ai API", version="0.1.0")
 GENERATED_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+GENERATED_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/media/generated-videos", StaticFiles(directory=GENERATED_VIDEO_DIR), name="generated-videos")
+app.mount("/media/generated-audio", StaticFiles(directory=GENERATED_AUDIO_DIR), name="generated-audio")
 
 app.add_middleware(
     CORSMiddleware,
@@ -171,6 +179,28 @@ app.add_middleware(
 
 def _clip_text(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit]
+
+
+def _store_generated_audio_url(audio_url: str, line_id: str) -> str:
+    if not audio_url.startswith("data:audio/"):
+        return audio_url
+    header, _, encoded = audio_url.partition(",")
+    if not encoded:
+        return audio_url
+    mime = header[5:].split(";", 1)[0] if header.startswith("data:") else "audio/mpeg"
+    extension = {
+        "audio/mpeg": "mp3",
+        "audio/mp3": "mp3",
+        "audio/wav": "wav",
+        "audio/x-wav": "wav",
+        "audio/mp4": "m4a",
+        "audio/aac": "aac",
+    }.get(mime, "mp3")
+    safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "-", line_id or f"audio-{datetime.now().timestamp()}").strip("-")
+    filename = f"{safe_id}-{int(datetime.now().timestamp() * 1000)}.{extension}"
+    target = GENERATED_AUDIO_DIR / filename
+    target.write_bytes(base64.b64decode(encoded))
+    return f"http://127.0.0.1:8000/media/generated-audio/{filename}"
 
 
 def _normalize_import_text(text: str) -> str:
@@ -623,6 +653,26 @@ def api_generate_video(payload: VideoGenerationRequest) -> GeneratedVideoRespons
         provider=result["provider"],
         model=result["model"],
         status=result["status"],
+        metadata=metadata,
+    )
+
+
+@app.post("/api/generate/audio", response_model=GeneratedAudioResponse)
+def api_generate_audio(payload: AudioGenerationRequest) -> GeneratedAudioResponse:
+    try:
+        result = create_minimax_speech(payload.text, payload.voice_id, payload.speed, payload.vol, payload.pitch)
+    except AIServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    metadata = (
+        f"{payload.shot_label or '未命名分镜'}；{payload.speaker or '未知说话人'}；"
+        f"MiniMax TTS 已生成；{result.get('metadata', '')}"
+    )
+    return GeneratedAudioResponse(
+        url=_store_generated_audio_url(result["url"], payload.line_id),
+        provider=result["provider"],
+        model=result["model"],
+        voice_id=result["voice_id"],
+        status="generated",
         metadata=metadata,
     )
 

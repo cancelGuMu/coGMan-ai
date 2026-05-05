@@ -3700,6 +3700,14 @@ select:focus {
   gap: 10px;
 }
 
+.preview-head-actions,
+.audio-line-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .audio-preview-list,
 .subtitle-cue-list {
   display: grid;
@@ -3708,7 +3716,7 @@ select:focus {
 
 .audio-preview-line {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 220px);
   gap: 8px 12px;
   align-items: center;
   border-radius: 12px;
@@ -3732,6 +3740,30 @@ select:focus {
   margin: 0;
   color: #f0ddb4;
   line-height: 1.6;
+}
+
+.audio-preview-line audio,
+.production-card audio {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 36px;
+}
+
+.audio-line-actions {
+  grid-column: 1 / -1;
+}
+
+.voice-select-label {
+  display: grid;
+  gap: 5px;
+  color: #c7b48c;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.voice-select-label select {
+  min-height: 36px;
+  border-radius: 10px;
 }
 
 .subtitle-cue-list {

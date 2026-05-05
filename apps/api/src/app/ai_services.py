@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import http.client
+import re
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -341,6 +342,70 @@ def retrieve_minimax_file(file_id: str) -> dict[str, Any]:
         {"Authorization": f"Bearer {api_key}"},
     )
     return data
+
+
+def create_minimax_speech(
+    text: str,
+    voice_id: str = "",
+    speed: float = 1,
+    vol: float = 1,
+    pitch: int = 0,
+) -> dict[str, str]:
+    load_env_files(override=True)
+    api_key = _env("MINIMAX_API_KEY")
+    if not api_key:
+        raise AIServiceError("缺少 MINIMAX_API_KEY")
+    base_url = _env("MINIMAX_BASE_URL", "https://api.minimaxi.com")
+    model = _env("MINIMAX_TTS_MODEL", "speech-02-hd")
+    selected_voice = voice_id.strip() or _env("MINIMAX_TTS_VOICE_ID", "male-qn-qingse")
+    payload = {
+        "model": model,
+        "text": text.strip(),
+        "stream": False,
+        "voice_setting": {
+            "voice_id": selected_voice,
+            "speed": max(0.5, min(2, speed)),
+            "vol": max(0.1, min(10, vol)),
+            "pitch": max(-12, min(12, pitch)),
+        },
+        "audio_setting": {
+            "sample_rate": int(_env("MINIMAX_TTS_SAMPLE_RATE", "32000")),
+            "bitrate": int(_env("MINIMAX_TTS_BITRATE", "128000")),
+            "format": _env("MINIMAX_TTS_FORMAT", "mp3"),
+            "channel": int(_env("MINIMAX_TTS_CHANNEL", "1")),
+        },
+    }
+    data = _post_json(
+        _api_url(base_url, "/v1/t2a_v2"),
+        payload,
+        {"Authorization": f"Bearer {api_key}"},
+        timeout=120,
+    )
+    audio = data.get("audio")
+    if isinstance(audio, dict):
+        audio_value = audio.get("audio") or audio.get("data") or audio.get("url") or audio.get("download_url")
+    else:
+        audio_value = audio
+    if not isinstance(audio_value, str) or not audio_value:
+        raise AIServiceError(f"MiniMax TTS 未返回音频：{json.dumps(data, ensure_ascii=False)}")
+    if audio_value.startswith(("http://", "https://", "data:")):
+        audio_url = audio_value
+    else:
+        compact_audio = re.sub(r"\s+", "", audio_value)
+        try:
+            bytes.fromhex(compact_audio[:32])
+            raw = bytes.fromhex(compact_audio)
+            audio_url = bytes_to_data_url(raw, "audio/mpeg")
+        except ValueError:
+            audio_url = f"data:audio/mpeg;base64,{compact_audio}"
+    trace_id = str(data.get("trace_id") or data.get("extra_info", {}).get("audio_length") or "")
+    return {
+        "url": audio_url,
+        "model": model,
+        "provider": "MiniMax",
+        "voice_id": selected_voice,
+        "metadata": f"voice_id={selected_voice}; trace={trace_id}; key={_key_fingerprint(api_key)}",
+    }
 
 
 def normalize_minimax_video_task(task: dict[str, Any]) -> dict[str, Any]:

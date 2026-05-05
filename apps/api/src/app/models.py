@@ -290,12 +290,19 @@ class DialogueLine(BaseModel):
     text: str = ""
     emotion: str = ""
     pause_seconds: float = 0
-    audio_status: Literal["pending", "generated"] = "pending"
+    audio_status: Literal["pending", "planned", "generated", "failed"] = "pending"
+    voice_id: str = ""
+    audio_url: str = ""
+    audio_provider: str = ""
+    audio_model: str = ""
+    audio_metadata: str = ""
+    audio_fail_reason: str = ""
 
 
 class VoiceProfile(BaseModel):
     id: str = ""
     character: str = ""
+    voice_id: str = ""
     tone: str = ""
     speed: str = ""
     emotion_strength: str = ""
@@ -581,3 +588,24 @@ class GeneratedVideoResponse(BaseModel):
 
 class VideoTaskStatusResponse(BaseModel):
     task: dict
+
+
+class AudioGenerationRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=10000)
+    shot_id: str = ""
+    shot_label: str = ""
+    line_id: str = ""
+    speaker: str = ""
+    voice_id: str = ""
+    speed: float = 1
+    vol: float = 1
+    pitch: int = 0
+
+
+class GeneratedAudioResponse(BaseModel):
+    url: str
+    provider: str
+    model: str
+    voice_id: str
+    status: str
+    metadata: str = ""

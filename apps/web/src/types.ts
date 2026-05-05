@@ -295,12 +295,19 @@ export type DialogueLine = {
   text: string;
   emotion: string;
   pause_seconds: number;
-  audio_status: "pending" | "generated";
+  audio_status: "pending" | "planned" | "generated" | "failed";
+  voice_id: string;
+  audio_url: string;
+  audio_provider: string;
+  audio_model: string;
+  audio_metadata: string;
+  audio_fail_reason: string;
 };
 
 export type VoiceProfile = {
   id: string;
   character: string;
+  voice_id: string;
   tone: string;
   speed: string;
   emotion_strength: string;

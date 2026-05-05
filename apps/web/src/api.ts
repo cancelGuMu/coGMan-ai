@@ -254,6 +254,23 @@ export async function generateVideoCandidate(input: {
   });
 }
 
+export async function generateAudioCandidate(input: {
+  text: string;
+  shot_id: string;
+  shot_label: string;
+  line_id: string;
+  speaker: string;
+  voice_id: string;
+  speed?: number;
+  vol?: number;
+  pitch?: number;
+}): Promise<{ url: string; provider: string; model: string; voice_id: string; status: string; metadata: string }> {
+  return request<{ url: string; provider: string; model: string; voice_id: string; status: string; metadata: string }>("/api/generate/audio", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export async function fetchVideoTaskStatus(taskId: string): Promise<{ task: Record<string, unknown> }> {
   return request<{ task: Record<string, unknown> }>(`/api/generate/video/${encodeURIComponent(taskId)}`);
 }

@@ -19,6 +19,7 @@ import {
   fetchProjects,
   fetchVideoTaskStatus,
   generateImageCandidate,
+  generateAudioCandidate,
   generateStepOneOutline,
   generateStepOneTask,
   generateTextTask,
@@ -96,6 +97,17 @@ const dashboardChartPaddingBottom = 24;
 const dashboardTrafficColors = ["#f2d99a", "#d9ab51", "#8b5b21", "#473116"];
 const dashboardDonutRadius = 74;
 const dashboardDonutCircumference = 2 * Math.PI * dashboardDonutRadius;
+const minimaxVoiceOptions = [
+  { id: "male-qn-qingse", label: "男声·青年清澈" },
+  { id: "male-qn-jingying", label: "男声·精英沉稳" },
+  { id: "male-qn-badao", label: "男声·强势压迫" },
+  { id: "female-shaonv", label: "女声·少女" },
+  { id: "female-yujie", label: "女声·御姐" },
+  { id: "female-chengshu", label: "女声·成熟女声" },
+  { id: "presenter_male", label: "旁白·男播音" },
+  { id: "presenter_female", label: "旁白·女播音" },
+];
+const defaultVoiceId = minimaxVoiceOptions[0].id;
 
 type DashboardChartPoint = {
   label: string;
@@ -6338,6 +6350,124 @@ function StepNineSection({
     setStatusMessage(line ? `正在朗读预览：${line.shot_label} / ${line.speaker}` : `正在朗读预览：${selectedAudioShotLabel}`);
   }
 
+  function updateDialogueLine(lineId: string, patch: Partial<DialogueLine>) {
+    setForm((current) => ({
+      ...current,
+      dialogue_lines: current.dialogue_lines.map((line) => line.id === lineId ? { ...line, ...patch } : line),
+    }));
+  }
+
+  async function generateLineAudio(line: DialogueLine) {
+    if (audioAction) return;
+    if (!line.text.trim()) {
+      setStatusMessage("该台词没有可生成的文本。");
+      return;
+    }
+    const voiceId = line.voice_id || (line.speaker === "旁白" ? "presenter_female" : defaultVoiceId);
+    setAudioAction(`tts:${line.id}`);
+    setStatusMessage(`正在为 ${line.shot_label} / ${line.speaker} 生成真实音频...`);
+    try {
+      const result = await generateAudioCandidate({
+        text: line.text,
+        shot_id: line.shot_id,
+        shot_label: line.shot_label,
+        line_id: line.id,
+        speaker: line.speaker,
+        voice_id: voiceId,
+        speed: line.speaker === "旁白" ? 0.95 : 1,
+        vol: 1,
+        pitch: 0,
+      });
+      setForm((current) => ({
+        ...current,
+        dialogue_lines: current.dialogue_lines.map((item) =>
+          item.id === line.id
+            ? {
+                ...item,
+                voice_id: result.voice_id || voiceId,
+                audio_status: "generated",
+                audio_url: result.url,
+                audio_provider: result.provider,
+                audio_model: result.model,
+                audio_metadata: result.metadata,
+                audio_fail_reason: "",
+              }
+            : item
+        ),
+      }));
+      setStatusMessage(`真实音频已生成：${line.shot_label} / ${line.speaker}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "真实音频生成失败";
+      setForm((current) => ({
+        ...current,
+        dialogue_lines: current.dialogue_lines.map((item) => item.id === line.id ? { ...item, audio_status: "failed", audio_fail_reason: message } : item),
+      }));
+      setStatusMessage(message);
+    } finally {
+      setAudioAction(null);
+    }
+  }
+
+  async function generateSelectedShotAudio() {
+    if (audioAction) return;
+    const lines = previewLines.filter((line) => line.text.trim());
+    if (!lines.length) {
+      setStatusMessage("所选分镜还没有可生成的配音/旁白文本。");
+      return;
+    }
+    setAudioAction("tts-selected");
+    setStatusMessage(`正在为 ${selectedAudioShotLabel} 批量生成真实音频...`);
+    try {
+      let successCount = 0;
+      let failedCount = 0;
+      for (const line of lines) {
+        const voiceId = line.voice_id || (line.speaker === "旁白" ? "presenter_female" : defaultVoiceId);
+        try {
+          const result = await generateAudioCandidate({
+            text: line.text,
+            shot_id: line.shot_id,
+            shot_label: line.shot_label,
+            line_id: line.id,
+            speaker: line.speaker,
+            voice_id: voiceId,
+            speed: line.speaker === "旁白" ? 0.95 : 1,
+            vol: 1,
+            pitch: 0,
+          });
+          successCount += 1;
+          setForm((current) => ({
+            ...current,
+            dialogue_lines: current.dialogue_lines.map((item) =>
+              item.id === line.id
+                ? {
+                    ...item,
+                    voice_id: result.voice_id || voiceId,
+                    audio_status: "generated",
+                    audio_url: result.url,
+                    audio_provider: result.provider,
+                    audio_model: result.model,
+                    audio_metadata: result.metadata,
+                    audio_fail_reason: "",
+                  }
+                : item
+            ),
+          }));
+        } catch (err) {
+          failedCount += 1;
+          const message = err instanceof Error ? err.message : "真实音频生成失败";
+          setForm((current) => ({
+            ...current,
+            dialogue_lines: current.dialogue_lines.map((item) => item.id === line.id ? { ...item, audio_status: "failed", audio_fail_reason: message } : item),
+          }));
+        }
+        setStatusMessage(`真实音频生成进度：${successCount + failedCount}/${lines.length}`);
+      }
+      setStatusMessage(`所选分镜真实音频生成完成：成功 ${successCount} 条，失败 ${failedCount} 条。`);
+    } finally {
+      setAudioAction(null);
+    }
+  }
+
   async function extractDialogue(scope: "single" | "batch") {
     if (audioAction) return;
     if (scope === "single" && !selectedAudioShot) {
@@ -6382,6 +6512,12 @@ function StepNineSection({
             emotion: textValue(record.emotion, "自然"),
             pause_seconds: numberValue(record.pause_seconds, 0.4),
             audio_status: "pending" as const,
+            voice_id: textValue(record.voice_id, "presenter_female"),
+            audio_url: "",
+            audio_provider: "",
+            audio_model: "",
+            audio_metadata: "",
+            audio_fail_reason: "",
           }];
         });
       if (!lines.length) {
@@ -6424,6 +6560,7 @@ function StepNineSection({
           return {
             id: `voice-ai-${Date.now()}-${index}`,
             character: textValue(record.character, `角色${index + 1}`),
+            voice_id: textValue(record.voice_id, defaultVoiceId),
             tone: textValue(record.tone, "自然"),
             speed: textValue(record.speed, "中速"),
             emotion_strength: textValue(record.emotion_strength, "中"),
@@ -6435,7 +6572,13 @@ function StepNineSection({
         voice_profiles: profiles.length ? profiles : current.voice_profiles,
         dialogue_lines: current.dialogue_lines.map((line) => {
           const inScope = scope === "batch" || line.shot_id === selectedAudioShotId;
-          return inScope && (includeNarration || line.speaker !== "旁白") ? { ...line, audio_status: "generated" } : line;
+          if (!inScope || (!includeNarration && line.speaker === "旁白")) return line;
+          const matchedProfile = profiles.find((profile) => profile.character === line.speaker);
+          return {
+            ...line,
+            audio_status: line.audio_url ? "generated" : "planned",
+            voice_id: line.voice_id || matchedProfile?.voice_id || (line.speaker === "旁白" ? "presenter_female" : defaultVoiceId),
+          };
         }),
         lip_sync_tasks: [
           ...current.lip_sync_tasks.filter((task) => scope === "batch" ? false : !task.includes(selectedAudioShotLabel)),
@@ -6545,9 +6688,13 @@ function StepNineSection({
   }
 
   function checkAudioSubtitle() {
-    const missingAudio = form.dialogue_lines.filter((line) => line.audio_status !== "generated").length;
+    const missingAudio = form.dialogue_lines.filter((line) => line.audio_status !== "generated" || !line.audio_url).length;
     const missingSubtitles = Math.max(0, form.dialogue_lines.length - form.subtitle_cues.length);
-    const report = missingAudio || missingSubtitles ? `缺失配音 ${missingAudio} 条，缺失字幕 ${missingSubtitles} 条，可继续但有风险。` : "配音与字幕完整，可进入剪辑成片。";
+    const plannedAudio = form.dialogue_lines.filter((line) => line.audio_status === "planned" && !line.audio_url).length;
+    const failedAudio = form.dialogue_lines.filter((line) => line.audio_status === "failed").length;
+    const report = missingAudio || missingSubtitles
+      ? `真实音频缺失 ${missingAudio} 条（其中仅规划 ${plannedAudio} 条，失败 ${failedAudio} 条），缺失字幕 ${missingSubtitles} 条，可继续但有风险。`
+      : "真实配音/旁白与字幕完整，可进入剪辑成片。";
     setForm((current) => ({ ...current, validation_report: report }));
     setStatusMessage(report);
   }
@@ -6587,6 +6734,7 @@ function StepNineSection({
         <AIActionButton isGenerating={audioAction === "voice-single"} disabled={Boolean(audioAction) || !selectedAudioShotId} loadingLabel="所选配音中" onClick={() => void generateAudio(false, "single")}>所选配音</AIActionButton>
         <AIActionButton isGenerating={audioAction === "narration-batch"} disabled={Boolean(audioAction)} loadingLabel="AI 旁白中" onClick={() => void generateAudio(true, "batch")}>批量旁白</AIActionButton>
         <AIActionButton isGenerating={audioAction === "narration-single"} disabled={Boolean(audioAction) || !selectedAudioShotId} loadingLabel="所选旁白中" onClick={() => void generateAudio(true, "single")}>所选旁白</AIActionButton>
+        <AIActionButton isGenerating={audioAction === "tts-selected"} disabled={Boolean(audioAction) || !previewLines.length} loadingLabel="生成音频中" onClick={() => void generateSelectedShotAudio()}>生成所选音频</AIActionButton>
         <AIActionButton isGenerating={audioAction === "subtitle"} disabled={Boolean(audioAction)} loadingLabel="AI 字幕中" onClick={() => void generateSubtitles("batch")}>批量字幕</AIActionButton>
         <AIActionButton isGenerating={audioAction === "subtitle-single"} disabled={Boolean(audioAction) || !selectedAudioShotId} loadingLabel="所选字幕中" onClick={() => void generateSubtitles("single")}>所选字幕</AIActionButton>
         <AIActionButton isGenerating={audioAction === "sound"} disabled={Boolean(audioAction)} loadingLabel="AI 音效建议中" onClick={() => void addSoundEffect("batch")}>批量音效建议</AIActionButton>
@@ -6623,17 +6771,31 @@ function StepNineSection({
         <div className="audio-preview-panel">
           <div className="preview-panel-head">
             <strong>配音/旁白预览</strong>
-            <button className="ghost-mini-button" type="button" onClick={() => previewSpeech()} disabled={!previewLines.length}>朗读所选分镜</button>
+            <div className="preview-head-actions">
+              <button className="ghost-mini-button" type="button" onClick={() => previewSpeech()} disabled={!previewLines.length}>本地朗读</button>
+              <AIActionButton className="ghost-mini-button" isGenerating={audioAction === "tts-selected"} disabled={Boolean(audioAction) || !previewLines.length} loadingLabel="生成中" onClick={() => void generateSelectedShotAudio()}>生成真实音频</AIActionButton>
+            </div>
           </div>
           <div className="audio-preview-list">
             {previewLines.length ? previewLines.map((line) => (
               <article className="audio-preview-line" key={line.id}>
                 <div>
                   <strong>{line.speaker}</strong>
-                  <span>{line.emotion} / {line.audio_status === "generated" ? "已生成规划" : "待生成规划"} / 停顿 {line.pause_seconds}s</span>
+                  <span>{line.emotion} / {line.audio_status === "generated" && line.audio_url ? "真实音频已生成" : line.audio_status === "planned" ? "已生成声音规划" : line.audio_status === "failed" ? "音频生成失败" : "待生成"} / 停顿 {line.pause_seconds}s</span>
                 </div>
+                <label className="voice-select-label">
+                  <span>声音</span>
+                  <select value={line.voice_id || (line.speaker === "旁白" ? "presenter_female" : defaultVoiceId)} onChange={(event) => updateDialogueLine(line.id, { voice_id: event.target.value })} disabled={Boolean(audioAction)}>
+                    {minimaxVoiceOptions.map((voice) => <option value={voice.id} key={voice.id}>{voice.label}</option>)}
+                  </select>
+                </label>
                 <p>{line.text}</p>
-                <button className="ghost-mini-button" type="button" onClick={() => previewSpeech(line)}>朗读</button>
+                {line.audio_url ? <audio controls preload="metadata" src={line.audio_url}>当前浏览器无法播放该音频。</audio> : null}
+                {line.audio_fail_reason ? <small>{line.audio_fail_reason}</small> : null}
+                <div className="audio-line-actions">
+                  <button className="ghost-mini-button" type="button" onClick={() => previewSpeech(line)}>本地朗读</button>
+                  <AIActionButton className="ghost-mini-button" isGenerating={audioAction === `tts:${line.id}`} disabled={Boolean(audioAction)} loadingLabel="生成中" onClick={() => void generateLineAudio(line)}>生成音频</AIActionButton>
+                </div>
               </article>
             )) : (
               <div className="video-online-placeholder compact-placeholder">
@@ -6662,7 +6824,15 @@ function StepNineSection({
             <strong>{line.shot_label} · {line.speaker}</strong>
             <span>{line.emotion} / {line.audio_status}</span>
             <p>{line.text}</p>
-            <small>暂停 {line.pause_seconds}s；音频状态：{line.audio_status === "generated" ? "AI 配音规划已生成" : "待生成"}</small>
+            <label className="voice-select-label">
+              <span>声音</span>
+              <select value={line.voice_id || (line.speaker === "旁白" ? "presenter_female" : defaultVoiceId)} onChange={(event) => updateDialogueLine(line.id, { voice_id: event.target.value })} disabled={Boolean(audioAction)}>
+                {minimaxVoiceOptions.map((voice) => <option value={voice.id} key={voice.id}>{voice.label}</option>)}
+              </select>
+            </label>
+            {line.audio_url ? <audio controls preload="metadata" src={line.audio_url}>当前浏览器无法播放该音频。</audio> : null}
+            <small>暂停 {line.pause_seconds}s；音频状态：{line.audio_status === "generated" && line.audio_url ? "真实音频已生成" : line.audio_status === "planned" ? "仅声音规划，尚未生成真实音频" : line.audio_status === "failed" ? `生成失败：${line.audio_fail_reason}` : "待生成"}</small>
+            <AIActionButton className="ghost-mini-button" isGenerating={audioAction === `tts:${line.id}`} disabled={Boolean(audioAction)} loadingLabel="生成中" onClick={() => void generateLineAudio(line)}>生成真实音频</AIActionButton>
           </article>
         ))}
       </div>
